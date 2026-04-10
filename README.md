@@ -1,165 +1,161 @@
-# Password Manager Vault - FE Static Bootstrap
+# DApp Password Manager
 
-## 1) Gioi thieu
-Du an nay la mot ung dung frontend tinh (khong can backend) duoc xay dung bang:
-- HTML5
-- CSS3
-- Bootstrap 5
-- JavaScript ES Modules
+Ứng dụng FE cho quản lý mật khẩu theo hướng DApp, được tổ chức lại bằng React + Vite + Tailwind CSS với kiến trúc module, route rõ ràng, lớp bảo mật cục bộ và luồng unlock phiên theo phiên làm việc.
 
-Ung dung mo phong trinh quan ly mat khau voi:
-- Dang nhap/Dang ky giao dien
-- Dashboard quan ly vault
-- Them, sua inline, xoa, copy, an/hien mat khau
-- Thong ke mat khau an toan/rui ro
-- Quan ly profile
-- Doi master password / account password
-- Import/Export du lieu JSON
-- Dark mode
+## Tech Stack
+- React 19
+- Vite
+- Tailwind CSS
+- React Router
+- Firebase Auth hoặc luồng mô phỏng khi chưa cấu hình
+- MetaMask / EIP-1193 wallet
+- Ethers cho blockchain helper
+- zxcvbn-ts để đánh giá độ mạnh mật khẩu
+- localStorage cho dữ liệu cục bộ
 
-Toan bo du lieu duoc luu tren `localStorage` trong trinh duyet.
-
----
-
-## 2) Cau truc tong the du an
+## Cấu Trúc Dự Án
 
 ```text
 exercise2_WP/
+|-- .env
+|-- .env.example
+|-- .gitignore
+|-- CHANGELOG.md
+|-- README.md
 |-- index.html
-|-- auth.html
-|-- style.css
-|-- auth-style.css
-|-- script.js
-|-- component.js
+|-- package.json
+|-- postcss.config.js
+|-- tailwind.config.js
+|-- vite.config.js
+|-- docs/
+|   |-- ARCHITECTURE.md
+|   |-- CONTRIBUTING.md
+|   `-- SETUP.md
+|-- legacy/
+|   `-- bootstrap-static/
+|       |-- auth-style.css
+|       |-- auth.html
+|       |-- component.js
+|       |-- index.bootstrap.html
+|       |-- script.js
+|       `-- style.css
 |-- Fake_data/
+|   |-- test_export.json
 |   |-- vaults.json
-|   |-- vaults_20data.json
-|   `-- test_export.json
-`-- file_giai_thich_code/
-    |-- bootstrap-giai-thich.md
-    |-- code.txt
-    |-- scipt_bao_cao.txt
-    |-- script-giai-thich.txt
-    `-- tu_nghiem.txt
+|   `-- vaults_20data.json
+|-- file_giai_thich_code/
+|   |-- bootstrap-giai-thich.md
+|   |-- code.txt
+|   |-- scipt_bao_cao.txt
+|   |-- script-giai-thich.txt
+|   `-- tu_nghiem.txt
+`-- src/
+    |-- app/
+    |   `-- App.jsx
+    |-- components/
+    |   |-- auth/
+    |   |   |-- AuthCard.jsx
+    |   |   `-- HybridAuthCard.jsx
+    |   |-- layout/
+    |   |   `-- Topbar.jsx
+    |   |-- navigation/
+    |   |   `-- ResponsiveSidebar.jsx
+    |   |-- security/
+    |   |   `-- MasterPasswordGate.jsx
+    |   |-- shared/
+    |   |   `-- PageHeader.jsx
+    |   |-- ui/
+    |   |   |-- Modal.jsx
+    |   |   `-- Toast.jsx
+    |   `-- vault/
+    |       `-- VaultPanel.jsx
+    |-- config/
+    |   `-- navigation.js
+    |-- context/
+    |   `-- AppContext.jsx
+    |-- hooks/
+    |   `-- useLocalStorage.js
+    |-- layouts/
+    |   `-- ShellLayout.jsx
+    |-- pages/
+    |   |-- AccountPage.jsx
+    |   |-- AppearancePage.jsx
+    |   |-- AuthPage.jsx
+    |   |-- BlockchainPage.jsx
+    |   |-- DashboardPage.jsx
+    |   |-- ExportPage.jsx
+    |   |-- GeneratorPage.jsx
+    |   |-- ImportPage.jsx
+    |   |-- ReportsPage.jsx
+    |   |-- SecurityPage.jsx
+    |   |-- SendPage.jsx
+    |   `-- VaultPage.jsx
+    |-- services/
+    |   |-- authService.js
+    |   |-- blockchainService.js
+    |   |-- vaultService.js
+    |   `-- walletService.js
+    |-- styles/
+    |   |-- index.css
+    |   `-- tokens.css
+    |-- utils/
+    |   |-- crypto.js
+    |   |-- password.js
+    |   `-- storageKeys.js
+    `-- main.jsx
 ```
 
----
+## Luồng Ứng Dụng
+- `AuthPage`: đăng nhập Google hoặc kết nối ví
+- `ShellLayout`: giao diện chính với sidebar đa cấp và topbar responsive
+- `VaultPage`: quản lý vault, yêu cầu master password khi xem, sửa, xóa
+- `GeneratorPage`: sinh mật khẩu mạnh
+- `ImportPage` / `ExportPage`: nhập và xuất JSON
+- `BlockchainPage`: tạo commitment hash và chuẩn bị lưu lên smart contract
+- `AccountPage` / `SecurityPage` / `AppearancePage`: hồ sơ, bảo mật, giao diện
+- `ReportsPage`: thống kê trạng thái vault
 
-## 3) Mo ta chi tiet tung file/folder
+## Bảo Mật Và DApp Logic
+- Hybrid Auth: hỗ trợ Google Auth và ví MetaMask trong một luồng xác thực
+- Session unlock: nhập master password một lần để mở khóa phiên; phiên tự khóa khi hết thời gian không sử dụng
+- Master Password Gate: chỉ bắt buộc lại cho các thao tác cực nhạy cảm như export và xóa toàn bộ dữ liệu
+- Vault actions: thêm/sửa/xóa từng mật khẩu không còn lặp lại yêu cầu xác thực
+- Hash utilities: hash SHA-256 cho mật khẩu cục bộ và commitment blockchain
+- Blockchain helper: tạo commitment hash và sẵn sàng ghi lên smart contract khi có cấu hình
+- Password strength: dùng zxcvbn-ts để đánh giá mật khẩu khi đăng ký, thêm/sửa vault và nhập JSON
+- Toast snackbar: thông báo nổi ở đáy màn hình, có hành động hoàn tác cho xóa nhanh
+- Mobile nav: có nút mở menu riêng trên màn hình nhỏ
 
-### 3.1 Trang va giao dien
+## Design Tokens
+Toàn bộ màu sắc, font và theme được khai báo ở:
+- [src/styles/tokens.css](src/styles/tokens.css)
 
-- `index.html`
-  - Trang chinh cua ung dung sau khi dang nhap.
-  - Chua cac khu vuc:
-    - Sidebar dieu huong (Quan ly mat khau / Cai dat)
-    - Header (search box, user dropdown)
-    - Dashboard thong ke
-    - Bang danh sach mat khau
-    - Cac modal: Them/Sua mat khau, Doi password, Profile, Xac nhan xoa du lieu
-  - Nap `style.css` va `script.js`.
+Tailwind được map trực tiếp sang các token này trong:
+- [tailwind.config.js](tailwind.config.js)
 
-- `auth.html`
-  - Trang xac thuc nguoi dung (Dang nhap / Dang ky) bang tab Bootstrap.
-  - Co toggle an/hien password o form dang nhap.
-  - Nap `auth-style.css`.
+## Chạy Dự Án
+1. `npm install`
+2. `npm run dev`
+3. Mở URL do Vite trả về, mặc định là `http://localhost:5173`
 
-### 3.2 Stylesheet
+## Scripts
+- `npm run dev`: chạy development server
+- `npm run build`: build production
+- `npm run preview`: xem bản build
 
-- `style.css`
-  - CSS cho trang dashboard (`index.html`).
-  - Dinh nghia bien mau chu dao (`--primary-blue`, ...).
-  - Tuỳ bien giao dien sidebar, card, bang, setting item, profile, hover effects.
+## Biến Môi Trường
+Copy từ `.env.example` sang `.env` và cấu hình các biến cần thiết cho auth / blockchain:
+- `VITE_APP_NAME`
+- `VITE_APP_LOCALE`
+- `VITE_DEFAULT_MASTER_PASSWORD`
+- `VITE_DEFAULT_ACCOUNT_PASSWORD`
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_APP_ID`
+- `VITE_VAULT_CONTRACT_ADDRESS`
 
-- `auth-style.css`
-  - CSS cho trang xac thuc (`auth.html`).
-  - Tao layout center card, glassmorphism nhe, style nav-pills, social buttons.
-
-### 3.3 JavaScript
-
-- `component.js`
-  - Xuat object `Components` chua cac ham render HTML dang string:
-    - `passwordRow(...)`: dong du lieu mat khau trong bang
-    - `editRow(...)`: dong form sua inline
-    - `emptyState()`: giao dien khi danh sach rong
-  - Dong vai tro tach template UI khoi logic xu ly.
-
-- `script.js`
-  - File logic chinh cua ung dung tai trang `index.html`.
-  - Chuc nang chinh:
-    - Khoi tao du lieu `vaults` tu `localStorage`
-    - Render danh sach mat khau va thong ke
-    - Them/sua/xoa mat khau + Undo xoa
-    - Filter mat khau yeu/an toan
-    - Toggle hien mat khau va copy clipboard
-    - Quan ly profile nguoi dung (`userProfile`)
-    - Doi `masterPassword` va `accountPassword`
-    - Import/Export file JSON
-    - Xoa toan bo vault voi xac thuc master password
-    - Chuyen dark/light mode va luu `theme`
-
-### 3.4 Du lieu mau
-
-- `Fake_data/vaults.json`
-  - Danh sach mau vault (so luong vua) cho test import.
-
-- `Fake_data/vaults_20data.json`
-  - Danh sach mau lon hon (20 ban ghi) de test bang, thong ke va hieu nang render.
-
-- `Fake_data/test_export.json`
-  - File mau mo phong ket qua export/import.
-
-### 3.5 Tai lieu noi bo
-
-- `file_giai_thich_code/`
-  - Chua cac file ghi chu, bao cao, dien giai bootstrap va script.
-  - Muc dich hoc tap/bao cao, khong anh huong runtime ung dung.
-
----
-
-## 4) Luong du lieu trong localStorage
-
-Ung dung hien dang su dung cac key chinh:
-- `vaults`: mang cac doi tuong `{ url, username, password }`
-- `userProfile`: thong tin ho so nguoi dung
-- `masterPassword`: mat khau master (mac dinh fallback: `123456`)
-- `accountPassword`: mat khau tai khoan (mac dinh fallback: `123456`)
-- `theme`: `light` hoac `dark`
-
-Luu y:
-- Day la du an FE tinh, du lieu khong duoc ma hoa cap backend.
-- Khong nen dung cho du lieu nhay cam that trong moi truong production.
-
----
-
-## 5) Cach chay du an
-
-### Cach 1 - Mo truc tiep
-1. Mo file `auth.html` bang trinh duyet.
-2. Dang nhap de chuyen sang `index.html`.
-
-### Cach 2 - Dung Live Server (khuyen nghi)
-1. Mo thu muc du an bang VS Code.
-2. Cai extension Live Server (neu chua co).
-3. Right click `auth.html` -> Open with Live Server.
-
----
-
-## 6) Goi y phat trien tiep
-
-- Tach logic thanh modules theo domain (vault, profile, settings).
-- Bo sung validate password manh (length, uppercase, number, special char).
-- Them tim kiem that su cho bang mat khau (search theo url/username).
-- Dong bo hoa ngon ngu (VI/EN) thay vi text hardcode.
-- Tich hop backend + ma hoa du lieu neu nang cap san pham that.
-
----
-
-## 7) Tom tat
-
-Day la mot codebase FE tinh gon, de hoc Bootstrap + JS DOM + localStorage, to chuc theo huong:
-- UI pages (`index.html`, `auth.html`)
-- Style tach rieng (`style.css`, `auth-style.css`)
-- Logic xu ly (`script.js`)
-- UI templates (`component.js`)
-- Du lieu mau + tai lieu dien giai (`Fake_data/`, `file_giai_thich_code/`)
+## Ghi Chú
+- Dữ liệu vẫn là client-side localStorage, chưa có backend lưu trữ thật
+- Thư mục `legacy/bootstrap-static` lưu lại phiên bản Bootstrap cũ để đối chiếu
+- Các trang chi tiết trong `src/pages` đã được tách theo vai trò nghiệp vụ, phù hợp mở rộng thêm feature sau này

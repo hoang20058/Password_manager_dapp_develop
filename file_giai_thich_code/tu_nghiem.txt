@@ -1,7 +1,0 @@
-rem - kích thước tự điều chỉnh theo màn
-1 rem = 16px
-
-việc bootstrap có các thẻ div lông nhau để đảm báo sưa chưa thay đổi mà không ảnh hưởng đên các phần khác, vd sủa nội dung k ảnh hưởng đến vị trí
-vị trí - trang trí - nội dung
-
-container > hàng > cột
