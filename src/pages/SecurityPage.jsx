@@ -32,7 +32,7 @@ export default function SecurityPage() {
       <div className="panel space-y-3 p-6">
         <h3 className="text-lg font-semibold">Tự động khóa phiên</h3>
         <p className="text-sm text-app-muted">
-          Phiên sẽ tự khóa sau khoảng thời gian không sử dụng, khi tab bị ẩn hoặc khi tải lại trang.
+          Phiên sẽ tự khóa sau khoảng thời gian không sử dụng. Khi có thao tác trong ứng dụng, bộ đếm sẽ được làm mới.
         </p>
         <label className="text-sm text-app-text" htmlFor="auto-lock-minutes">
           Thời gian không sử dụng trước khi khóa

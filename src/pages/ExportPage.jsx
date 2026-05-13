@@ -1,13 +1,13 @@
 import { useApp } from "../context/AppContext";
 import PageHeader from "../components/shared/PageHeader";
 import { Download, Trash2 } from "lucide-react";
-import { vaultService } from "../services/vaultService";
 
 export default function ExportPage() {
-  const { vaults, requestMasterAction, clearAllVaultData } = useApp();
+  const { requestMasterAction, clearAllVaultData, exportVaultData } = useApp();
 
-  const runExport = () => {
-    const blob = new Blob([vaultService.exportToJson(vaults)], { type: "application/json" });
+  const runExport = async (password) => {
+    const payload = await exportVaultData(password);
+    const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;

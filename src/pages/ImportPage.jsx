@@ -1,35 +1,69 @@
 import { useRef, useState } from "react";
 import PageHeader from "../components/shared/PageHeader";
-import { vaultService } from "../services/vaultService";
 import { useApp } from "../context/AppContext";
 import { assessVaultPasswords } from "../utils/password";
+import Modal from "../components/ui/Modal";
 
 export default function ImportPage() {
-  const { setVaults, notify } = useApp();
+  const { importVaultData, notify } = useApp();
   const fileRef = useRef(null);
   const [preview, setPreview] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [importPassword, setImportPassword] = useState("");
+  const [pendingRawText, setPendingRawText] = useState("");
+  const [isPromptOpen, setPromptOpen] = useState(false);
+  const [promptError, setPromptError] = useState("");
+  const [isImporting, setImporting] = useState(false);
+
+  const closePrompt = () => {
+    setPromptOpen(false);
+    setPendingRawText("");
+    setImportPassword("");
+    setPromptError("");
+  };
+
+  const executeImport = async (password = "") => {
+    if (!pendingRawText) {
+      setPromptError("Không tìm thấy dữ liệu file import");
+      return;
+    }
+
+    setImporting(true);
+    setPromptError("");
+
+    try {
+      const parsed = await importVaultData(pendingRawText, password);
+      const assessment = assessVaultPasswords(parsed);
+      setPreview(parsed.slice(0, 5));
+      setSummary(assessment);
+      notify(
+        assessment.weakCount > 0
+          ? `Đã import ${assessment.total} bản ghi, có ${assessment.weakCount} mật khẩu rủi ro cần đổi.`
+          : `Đã import ${assessment.total} bản ghi, tất cả đạt khuyến nghị.`,
+        assessment.weakCount > 0 ? "warning" : "success"
+      );
+      closePrompt();
+    } catch (error) {
+      const message = error?.message || "File import không hợp lệ";
+      setPromptError(message);
+      setSummary(null);
+      setPreview([{ error: message }]);
+      notify(message, "danger");
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleImport = (file) => {
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        const parsed = vaultService.importFromJson(String(reader.result));
-        const assessment = assessVaultPasswords(parsed);
-        setPreview(parsed.slice(0, 5));
-        setSummary(assessment);
-        setVaults(parsed);
-        notify(
-          assessment.weakCount > 0
-            ? `Đã import ${assessment.total} bản ghi, có ${assessment.weakCount} mật khẩu rủi ro cần đổi.`
-            : `Đã import ${assessment.total} bản ghi, tất cả đạt khuyến nghị.`,
-          assessment.weakCount > 0 ? "warning" : "success"
-        );
-      } catch {
-        setSummary(null);
-        setPreview([{ error: "File import không hợp lệ" }]);
-        notify("File import không hợp lệ", "danger");
-      }
+      setPendingRawText(String(reader.result ?? ""));
+      setPromptOpen(true);
+      setPromptError("");
+      setImportPassword("");
+    };
+    reader.onerror = () => {
+      notify("Không thể đọc file import", "danger");
     };
     reader.readAsText(file);
   };
@@ -45,7 +79,17 @@ export default function ImportPage() {
         <button className="btn-primary" type="button" onClick={() => fileRef.current?.click()}>
           Chọn file JSON
         </button>
-        <input ref={fileRef} type="file" accept="application/json" className="hidden" onChange={(event) => event.target.files?.[0] && handleImport(event.target.files[0])} />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) handleImport(file);
+            event.target.value = "";
+          }}
+        />
         {summary ? (
           <div className="rounded-2xl border bg-app-surface-alt p-4 text-sm text-app-text">
             <p>Tổng bản ghi: {summary.total}</p>
@@ -59,6 +103,39 @@ export default function ImportPage() {
           <p className="text-sm text-app-muted">Chưa có dữ liệu xem trước.</p>
         )}
       </div>
+
+      <Modal open={isPromptOpen} title="Xác nhận import dữ liệu" onClose={isImporting ? () => {} : closePrompt}>
+        <div className="space-y-3">
+          <p className="text-sm text-app-muted">
+            Nhập master password nếu file là ciphertext export mới. Nếu là file JSON plaintext cũ, bạn có thể bấm Skip.
+          </p>
+          <input
+            className="field"
+            type="password"
+            placeholder="Master password để giải mã file ciphertext"
+            value={importPassword}
+            onChange={(event) => setImportPassword(event.target.value)}
+            disabled={isImporting}
+          />
+          {promptError ? <p className="text-sm text-red-500">{promptError}</p> : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button className="btn-soft" type="button" onClick={closePrompt} disabled={isImporting}>
+              Hủy
+            </button>
+            <button className="btn-soft" type="button" onClick={() => executeImport("")} disabled={isImporting}>
+              Skip
+            </button>
+            <button
+              className="btn-primary"
+              type="button"
+              onClick={() => executeImport(importPassword)}
+              disabled={isImporting}
+            >
+              {isImporting ? "Đang import..." : "Import với master password"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

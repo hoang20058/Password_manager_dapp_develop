@@ -1,8 +1,7 @@
-import { Download, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import PageHeader from "../components/shared/PageHeader";
 import VaultPanel from "../components/vault/VaultPanel";
-import { vaultService } from "../services/vaultService";
 
 export default function VaultPage() {
   const { vaults, setVaults, search, notify } = useApp();
@@ -26,7 +25,6 @@ export default function VaultPage() {
         setVaults={setVaults}
         search={search}
         onToast={notify}
-        exportVaults={() => vaultService.exportToJson(vaults)}
       />
     </section>
   );

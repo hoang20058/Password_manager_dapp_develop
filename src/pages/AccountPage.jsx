@@ -10,7 +10,6 @@ export default function AccountPage() {
     await logout();
     navigate("/auth", { replace: true });
   };
-
   return (
     <section className="space-y-4">
       <PageHeader
@@ -19,13 +18,14 @@ export default function AccountPage() {
         description="Quản lý thông tin định danh, trạng thái đăng nhập Google và ví kết nối."
       />
       <div className="grid gap-4 xl:grid-cols-2">
-        <form className="panel space-y-3 p-6" onSubmit={(event) => event.preventDefault()}>
+        <section className="panel space-y-3 p-6">
           <h3 className="text-lg font-semibold">Hồ sơ cá nhân</h3>
+          <p className="text-sm text-app-muted">Thông tin được lưu tự động ngay khi bạn chỉnh sửa.</p>
           <input className="field" value={profile.name} onChange={(event) => setProfile((prev) => ({ ...prev, name: event.target.value }))} placeholder="Họ và tên" />
           <input className="field" value={profile.username} onChange={(event) => setProfile((prev) => ({ ...prev, username: event.target.value }))} placeholder="Tên đăng nhập" />
           <input className="field" value={profile.email} onChange={(event) => setProfile((prev) => ({ ...prev, email: event.target.value }))} placeholder="Email" />
           <input className="field" value={profile.bio} onChange={(event) => setProfile((prev) => ({ ...prev, bio: event.target.value }))} placeholder="Mô tả" />
-        </form>
+        </section>
 
         <div className="panel space-y-3 p-6">
           <h3 className="text-lg font-semibold">Hybrid Auth</h3>

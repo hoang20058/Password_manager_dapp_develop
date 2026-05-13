@@ -14,12 +14,10 @@ export default function AuthPage() {
     bootstrapped,
     authBusy,
     setSession,
-    setSessionUnlocked,
     setProfile,
-    vaults,
     hasMasterPassword,
     createMasterPassword,
-    verifyMasterPassword
+    unlockWithMasterPassword
   } = useApp();
   const [error, setError] = useState("");
   const [tab, setTab] = useState("login");
@@ -39,8 +37,6 @@ export default function AuthPage() {
     [identity?.address, identity?.displayName, identity?.email, registerMaster]
   );
 
-  const canSkipMaster = step === 2 && identity && (import.meta.env.DEV || vaults.length === 0);
-
   const applyIdentityToProfile = (selectedIdentity) => {
     if (!selectedIdentity) return;
     setProfile((prev) => ({
@@ -59,7 +55,6 @@ export default function AuthPage() {
       google: isGoogle ? selectedIdentity : null,
       wallet: isGoogle ? null : selectedIdentity
     });
-    setSessionUnlocked(true);
     applyIdentityToProfile(selectedIdentity);
     navigate("/app/vault", { replace: true });
   };
@@ -111,8 +106,8 @@ export default function AuthPage() {
     }
     if (!loginMaster) return setError("Vui lòng nhập master password");
 
-    const verified = await verifyMasterPassword(loginMaster);
-    if (!verified) return setError("Master password không chính xác");
+    const result = await unlockWithMasterPassword(loginMaster);
+    if (!result.ok) return setError(result.message || "Master password không chính xác");
 
     finalizeSession(identity);
   };
@@ -132,15 +127,6 @@ export default function AuthPage() {
     } catch (appError) {
       setError(appError.message || "Không thể đăng ký");
     }
-  };
-
-  const handleSkipMasterTemporarily = () => {
-    if (!identity) {
-      setError("Vui lòng chọn Google hoặc Connect ví trước khi bỏ qua master password");
-      return;
-    }
-    setError("");
-    finalizeSession(identity);
   };
 
   return (
@@ -258,17 +244,6 @@ export default function AuthPage() {
                 Quay lại bước định danh
               </button>
 
-              {canSkipMaster ? (
-                <button className="btn-soft w-full border-amber-300 text-amber-700" type="button" onClick={handleSkipMasterTemporarily}>
-                  Skip tạm thời để test chức năng
-                </button>
-              ) : null}
-
-              {canSkipMaster ? (
-                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-700">
-                  Chế độ test tạm thời: bỏ qua xác thực master password để vào app kiểm tra luồng chức năng.
-                </div>
-              ) : null}
             </>
           ) : null}
 

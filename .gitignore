@@ -4,6 +4,7 @@ dist/
 .DS_Store
 *.log
 .env
+.gitignore
+docs/
+PROJECT_GUIDE.md
 CHANGELOG.md
-legacy/
-Fake_data/
