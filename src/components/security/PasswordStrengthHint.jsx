@@ -2,11 +2,19 @@ import { useMemo } from "react";
 import { evaluatePasswordStrength } from "../../utils/password";
 
 const meterTone = [
-  "bg-red-500",
+  "bg-rose-500",
   "bg-orange-500",
-  "bg-amber-500",
-  "bg-lime-500",
-  "bg-green-500"
+  "bg-amber-400",
+  "bg-emerald-500",
+  "bg-emerald-400"
+];
+
+const statusTone = [
+  "text-rose-600 dark:text-rose-300",
+  "text-orange-600 dark:text-orange-300",
+  "text-amber-700 dark:text-amber-300",
+  "text-emerald-600 dark:text-emerald-300",
+  "text-emerald-600 dark:text-emerald-300"
 ];
 
 export default function PasswordStrengthHint({ password = "", userInputs = [], policyText }) {
@@ -17,40 +25,52 @@ export default function PasswordStrengthHint({ password = "", userInputs = [], p
 
   if (!password) {
     return (
-      <div className="rounded-xl border bg-app-surface-alt p-3 text-xs text-app-muted">
-        Nhập mật khẩu để xem đánh giá độ mạnh.
+      <div className="rounded-2xl border border-dashed border-app-border bg-app-surface-alt/70 p-4 text-sm text-app-muted">
+        Nhập mật khẩu để xem đánh giá độ mạnh và thời gian bẻ khóa ước tính.
       </div>
     );
   }
 
+  const score = Math.min(Math.max(strength.score, 0), 4);
+  const progress = `${Math.max(12, (score + 1) * 20)}%`;
+  const statusLabel = strength.meetsPolicy ? "Đạt chuẩn vault" : "Cần cải thiện";
+
   return (
-    <div className="rounded-xl border bg-app-surface-alt p-3 text-xs text-app-muted">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="font-semibold text-app-text">Độ mạnh: {strength.label}</p>
-        <p className={strength.meetsPolicy ? "text-green-600" : "text-amber-600"}>
-          {strength.meetsPolicy ? "Đạt khuyến nghị" : "Cần cải thiện"}
+    <div className="rounded-2xl border border-app-border bg-app-surface-alt/70 p-4 text-sm shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-app-muted">Password strength</p>
+          <p className="mt-1 text-base font-semibold text-app-text">{strength.label}</p>
+        </div>
+        <p className={`rounded-full bg-app-surface px-3 py-1 text-xs font-semibold ${statusTone[score]}`}>
+          {statusLabel}
         </p>
       </div>
 
-      <div className="mb-2 grid grid-cols-4 gap-1">
-        {[0, 1, 2, 3].map((segment) => (
-          <span
-            key={segment}
-            className={`h-1.5 rounded-full ${segment <= strength.score ? meterTone[strength.score] : "bg-app-border"}`}
-          />
-        ))}
+      <div
+        aria-label="Password strength score"
+        aria-valuemax={5}
+        aria-valuemin={1}
+        aria-valuenow={score + 1}
+        className="h-2.5 overflow-hidden rounded-full bg-app-surface-muted"
+        role="meter"
+      >
+        <div
+          className={`h-full rounded-full ${meterTone[score]} transition-all duration-500 ease-premium`}
+          style={{ width: progress }}
+        />
       </div>
 
-      <p>
-        Chính sách: {policyText || "Tối thiểu 8 ký tự và đạt mức Khá trở lên."}
-      </p>
-      {strength.warning ? <p className="mt-1 text-amber-700">Cảnh báo: {strength.warning}</p> : null}
-      {strength.suggestions?.length ? (
-        <p className="mt-1">Gợi ý: {strength.suggestions[0]}</p>
-      ) : null}
-      {strength.crackTimeDisplay ? (
-        <p className="mt-1">Ước tính thời gian bẻ khóa: {strength.crackTimeDisplay}</p>
-      ) : null}
+      <div className="mt-3 grid gap-2 text-xs leading-5 text-app-muted">
+        <p>Chính sách: {policyText || "Tối thiểu 8 ký tự và đạt mức Khá trở lên."}</p>
+        {strength.warning ? <p className="text-amber-700 dark:text-amber-300">Cảnh báo: {strength.warning}</p> : null}
+        {strength.suggestions?.length ? <p>Gợi ý: {strength.suggestions[0]}</p> : null}
+        {strength.crackTimeDisplay ? (
+          <p className="font-mono text-[0.72rem] text-app-text/80">
+            Ước tính bẻ khóa: {strength.crackTimeDisplay}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -3,12 +3,16 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Globe2,
   KeyRound,
+  LockKeyhole,
   Pencil,
   Plus,
+  SearchX,
   ShieldAlert,
   ShieldCheck,
-  Trash2
+  Trash2,
+  UserRound
 } from "lucide-react";
 import Modal from "../ui/Modal";
 import PasswordStrengthHint from "../security/PasswordStrengthHint";
@@ -16,7 +20,32 @@ import { evaluatePasswordStrength, getDomainName, isSafePassword } from "../../u
 
 const emptyForm = { url: "", username: "", password: "" };
 
-export default function VaultPanel({ vaults, setVaults, search, onToast }) {
+function VaultSkeleton() {
+  return (
+    <div className="grid gap-3">
+      {[0, 1, 2].map((item) => (
+        <div className="rounded-2xl border border-app-border bg-app-surface p-4" key={item}>
+          <div className="flex items-center gap-3">
+            <div className="skeleton h-11 w-11" />
+            <div className="flex-1 space-y-2">
+              <div className="skeleton h-4 w-40" />
+              <div className="skeleton h-3 w-64 max-w-full" />
+            </div>
+            <div className="hidden gap-2 sm:flex">
+              <div className="skeleton h-10 w-10" />
+              <div className="skeleton h-10 w-10" />
+              <div className="skeleton h-10 w-10" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function VaultPanel({ vaults, setVaults, search = "", onToast }) {
+  const vaultList = Array.isArray(vaults) ? vaults : [];
+  const isLoading = !Array.isArray(vaults);
   const [mode, setMode] = useState("all");
   const [isModalOpen, setModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -24,14 +53,14 @@ export default function VaultPanel({ vaults, setVaults, search, onToast }) {
   const [showFormPassword, setShowFormPassword] = useState(false);
 
   const stats = {
-    total: vaults.length,
-    safe: vaults.filter((item) => isSafePassword(item.password)).length,
-    risk: vaults.filter((item) => !isSafePassword(item.password)).length
+    total: vaultList.length,
+    safe: vaultList.filter((item) => isSafePassword(item.password)).length,
+    risk: vaultList.filter((item) => !isSafePassword(item.password)).length
   };
 
   const filtered = useMemo(() => {
     const searchTerm = search.toLowerCase().trim();
-    return vaults
+    return vaultList
       .map((item, index) => ({ ...item, index }))
       .filter((item) => {
         const matchMode =
@@ -48,7 +77,7 @@ export default function VaultPanel({ vaults, setVaults, search, onToast }) {
 
         return matchMode && matchSearch;
       });
-  }, [mode, search, vaults]);
+  }, [mode, search, vaultList]);
 
   const openCreate = () => {
     setEditingIndex(null);
@@ -59,7 +88,7 @@ export default function VaultPanel({ vaults, setVaults, search, onToast }) {
 
   const openEdit = (index) => {
     setEditingIndex(index);
-    setForm(vaults[index]);
+    setForm(vaultList[index]);
     setShowFormPassword(false);
     setModalOpen(true);
   };
@@ -74,7 +103,7 @@ export default function VaultPanel({ vaults, setVaults, search, onToast }) {
       onToast(
         strength.meetsPolicy
           ? "Đã thêm mật khẩu mới"
-          : "Đã thêm nhưng mật khẩu còn yếu, nên đổi ngay để an toàn hơn",
+          : "Đã thêm, nhưng mật khẩu còn yếu. Nên đổi sớm để an toàn hơn.",
         strength.meetsPolicy ? "success" : "warning"
       );
     } else {
@@ -82,7 +111,7 @@ export default function VaultPanel({ vaults, setVaults, search, onToast }) {
       onToast(
         strength.meetsPolicy
           ? "Đã cập nhật mật khẩu"
-          : "Đã cập nhật nhưng mật khẩu còn yếu, nên đổi sớm",
+          : "Đã cập nhật, nhưng mật khẩu còn yếu. Nên đổi sớm.",
         strength.meetsPolicy ? "success" : "warning"
       );
     }
@@ -93,7 +122,7 @@ export default function VaultPanel({ vaults, setVaults, search, onToast }) {
   };
 
   const remove = (index) => {
-    const deletedItem = vaults[index];
+    const deletedItem = vaultList[index];
     setVaults((prev) => prev.filter((_, idx) => idx !== index));
     onToast("Đã xóa mật khẩu", "warning", {
       action: {
@@ -112,94 +141,184 @@ export default function VaultPanel({ vaults, setVaults, search, onToast }) {
   };
 
   const copyPassword = async (password) => {
-    await navigator.clipboard.writeText(password);
-    onToast("Đã sao chép mật khẩu", "info");
+    try {
+      await navigator.clipboard.writeText(password);
+      onToast("Đã sao chép mật khẩu", "info");
+    } catch {
+      onToast("Không thể sao chép mật khẩu. Hãy thử lại.", "danger");
+    }
   };
 
+  const statCards = [
+    {
+      id: "all",
+      label: "Tổng số",
+      value: stats.total,
+      Icon: KeyRound,
+      tone: "text-app-primary",
+      helper: "Mục đang lưu"
+    },
+    {
+      id: "safe",
+      label: "An toàn",
+      value: stats.safe,
+      Icon: ShieldCheck,
+      tone: "text-app-success",
+      helper: "Đạt chính sách"
+    },
+    {
+      id: "risk",
+      label: "Rủi ro",
+      value: stats.risk,
+      Icon: ShieldAlert,
+      tone: "text-app-danger",
+      helper: "Cần xử lý"
+    }
+  ];
+
+  const hasSearch = search.trim().length > 0;
+  const isInitialEmpty = vaultList.length === 0;
+
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold">Trang chủ Vault</h2>
-        <button className="btn-primary gap-2" onClick={openCreate} type="button">
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-app-muted">Vault overview</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-app-text">Trang chủ Vault</h2>
+        </div>
+        <button className="btn-primary" onClick={openCreate} type="button">
           <Plus className="h-4 w-4" />
           Thêm mật khẩu mới
         </button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <button type="button" className="panel flex items-center justify-between p-4 text-left" onClick={() => setMode("all")}>
-          <div>
-            <p className="text-xs text-app-muted">Tổng số</p>
-            <p className="text-2xl font-bold">{stats.total}</p>
-          </div>
-          <KeyRound className="h-8 w-8 text-app-primary" />
-        </button>
-        <button type="button" className="panel flex items-center justify-between p-4 text-left" onClick={() => setMode("safe")}>
-          <div>
-            <p className="text-xs text-app-muted">An toàn</p>
-            <p className="text-2xl font-bold text-app-success">{stats.safe}</p>
-          </div>
-          <ShieldCheck className="h-8 w-8 text-app-success" />
-        </button>
-        <button type="button" className="panel flex items-center justify-between p-4 text-left" onClick={() => setMode("risk")}>
-          <div>
-            <p className="text-xs text-app-muted">Rủi ro</p>
-            <p className="text-2xl font-bold text-app-danger">{stats.risk}</p>
-          </div>
-          <ShieldAlert className="h-8 w-8 text-app-danger" />
-        </button>
+        {statCards.map(({ id, label, value, Icon, tone, helper }) => {
+          const active = mode === id;
+
+          return (
+            <button
+              className={`panel group flex items-center justify-between p-4 text-left hover:-translate-y-0.5 hover:border-app-primary/45 hover:shadow-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
+                active ? "border-app-primary/60 bg-app-primary-soft/70 shadow-panel" : ""
+              }`}
+              key={id}
+              onClick={() => setMode(id)}
+              type="button"
+            >
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-app-muted">{label}</p>
+                <p className={`mt-2 text-3xl font-bold ${tone}`}>{value}</p>
+                <p className="mt-1 text-xs text-app-muted">{helper}</p>
+              </div>
+              <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-app-surface-alt ${tone}`}>
+                <Icon className="h-6 w-6 transition-transform duration-200 group-hover:scale-110" />
+              </div>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="panel overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-app-surface-alt text-app-muted">
-              <tr>
-                <th className="px-4 py-3 text-left font-semibold">URL</th>
-                <th className="px-4 py-3 text-left font-semibold">Username</th>
-                <th className="px-4 py-3 text-left font-semibold">Password</th>
-                <th className="px-4 py-3 text-right font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center text-app-muted">
-                    Chưa có dữ liệu phù hợp
-                  </td>
-                </tr>
-              )}
-              {filtered.map((item) => (
-                <tr className="border-t" key={`${item.url}-${item.index}`}>
-                  <td className="px-4 py-3 font-medium">{getDomainName(item.url)}</td>
-                  <td className="px-4 py-3">{item.username}</td>
-                  <td className="px-4 py-3 font-mono">••••••••</td>
-                  <td className="px-4 py-3">
+      <div className="panel p-2 sm:p-3">
+        {isLoading ? <VaultSkeleton /> : null}
+
+        {!isLoading && filtered.length === 0 ? (
+          <div className="flex min-h-[18rem] flex-col items-center justify-center rounded-2xl border border-dashed border-app-border bg-app-surface-alt/60 p-8 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-app-primary-soft text-app-primary">
+              {isInitialEmpty ? <LockKeyhole className="h-7 w-7" /> : <SearchX className="h-7 w-7" />}
+            </div>
+            <h3 className="mt-4 text-lg font-semibold text-app-text">
+              {isInitialEmpty ? "Vault đang trống" : "Không có mục phù hợp"}
+            </h3>
+            <p className="mt-2 max-w-md text-sm leading-6 text-app-muted">
+              {isInitialEmpty
+                ? "Thêm thông tin đăng nhập đầu tiên để bắt đầu quản lý mật khẩu trong kho mã hóa."
+                : hasSearch
+                  ? "Thử đổi từ khóa tìm kiếm hoặc xem lại bộ lọc an toàn/rủi ro."
+                  : "Bộ lọc hiện tại không có dữ liệu. Bạn có thể quay về tất cả mục."}
+            </p>
+            <button className="btn-soft mt-5" type="button" onClick={isInitialEmpty ? openCreate : () => setMode("all")}>
+              {isInitialEmpty ? "Thêm mục đầu tiên" : "Hiển thị tất cả"}
+            </button>
+          </div>
+        ) : null}
+
+        {!isLoading && filtered.length > 0 ? (
+          <div className="grid gap-3">
+            {filtered.map((item) => {
+              const strength = evaluatePasswordStrength(item.password, [item.url, item.username]);
+              const safe = strength.meetsPolicy;
+              const domain = getDomainName(item.url) || "unknown-site";
+
+              return (
+                <article
+                  className="group rounded-2xl border border-app-border bg-app-surface p-4 shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-app-primary/40 hover:shadow-card"
+                  key={`${item.url}-${item.index}`}
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-app-surface-alt text-app-primary">
+                        <Globe2 className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate text-base font-semibold text-app-text">{domain}</h3>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              safe
+                                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                : "bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                            }`}
+                          >
+                            {safe ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
+                            {safe ? "An toàn" : "Rủi ro"}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-app-muted">
+                          <span className="inline-flex min-w-0 items-center gap-2">
+                            <UserRound className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{item.username}</span>
+                          </span>
+                          <span className="font-mono text-xs tracking-[0.18em] text-app-text/70">••••••••••••</span>
+                          <span className={safe ? "text-emerald-600 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>
+                            {strength.label}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="flex items-center justify-end gap-2">
-                      <button className="btn-soft px-2 py-1" type="button" onClick={() => copyPassword(item.password)}>
+                      <button
+                        className="icon-button"
+                        type="button"
+                        onClick={() => copyPassword(item.password)}
+                        aria-label={`Sao chép mật khẩu cho ${domain}`}
+                      >
                         <Copy className="h-4 w-4" />
                       </button>
                       <button
-                        className="btn-soft px-2 py-1"
+                        className="icon-button"
                         type="button"
                         onClick={() => openEdit(item.index)}
+                        aria-label={`Chỉnh sửa ${domain}`}
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button
-                        className="btn-soft px-2 py-1 text-red-500"
+                        className="icon-button text-rose-600 hover:border-rose-400/60 hover:text-rose-600 dark:text-rose-300"
                         type="button"
                         onClick={() => remove(item.index)}
+                        aria-label={`Xóa ${domain}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       <Modal
@@ -210,46 +329,55 @@ export default function VaultPanel({ vaults, setVaults, search, onToast }) {
           setShowFormPassword(false);
         }}
       >
-        <form className="space-y-3" onSubmit={save}>
-          <input
-            className="field"
-            placeholder="https://example.com"
-            required
-            value={form.url}
-            onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
-          />
-          <input
-            className="field"
-            placeholder="Username / Email"
-            required
-            value={form.username}
-            onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
-          />
-          <div className="relative">
+        <form className="space-y-4" onSubmit={save}>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-app-muted">Website URL</span>
             <input
-              className="field pr-12"
-              type={showFormPassword ? "text" : "password"}
-              placeholder="Password"
+              className="field"
+              placeholder="https://example.com"
               required
-              value={form.password}
-              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+              value={form.url}
+              onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
             />
-            <button
-              className="absolute inset-y-0 right-2 my-auto flex h-8 w-8 items-center justify-center rounded-lg text-app-muted hover:bg-app-surface-alt hover:text-app-text"
-              type="button"
-              onClick={() => setShowFormPassword((prev) => !prev)}
-              aria-label={showFormPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-            >
-              {showFormPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-app-muted">Username hoặc email</span>
+            <input
+              className="field"
+              placeholder="name@example.com"
+              required
+              value={form.username}
+              onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-semibold text-app-muted">Password</span>
+            <div className="relative">
+              <input
+                className="field pr-12 font-mono"
+                type={showFormPassword ? "text" : "password"}
+                placeholder="Nhập mật khẩu"
+                required
+                value={form.password}
+                onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+              />
+              <button
+                className="icon-button absolute inset-y-0 right-2 my-auto h-8 w-8 rounded-lg"
+                type="button"
+                onClick={() => setShowFormPassword((prev) => !prev)}
+                aria-label={showFormPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              >
+                {showFormPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </label>
           <PasswordStrengthHint
             password={form.password}
             userInputs={[form.url, form.username]}
             policyText="Mật khẩu lưu trong vault nên đạt mức Khá trở lên và tối thiểu 8 ký tự."
           />
           <button className="btn-primary w-full" type="submit">
-            Lưu
+            Lưu mật khẩu
           </button>
         </form>
       </Modal>
