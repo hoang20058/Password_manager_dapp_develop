@@ -4,6 +4,7 @@ import { ArrowRight, Link2, Shield, Wallet } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { evaluatePasswordStrength } from "../utils/password";
 import PasswordStrengthHint from "../components/security/PasswordStrengthHint";
+import LoadingSpinner from "../components/ui/LoadingSpinner";
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -17,15 +18,18 @@ export default function AuthPage() {
     setProfile,
     hasMasterPassword,
     createMasterPassword,
-    unlockWithMasterPassword
+    unlockWithMasterPassword,
+    syncVaultOnLoginIfNeeded
   } = useApp();
   const [error, setError] = useState("");
+  const [syncNotice, setSyncNotice] = useState("");
   const [tab, setTab] = useState("login");
   const [step, setStep] = useState(1);
   const [identity, setIdentity] = useState(null);
   const [loginMaster, setLoginMaster] = useState("");
   const [registerMaster, setRegisterMaster] = useState("");
   const [registerConfirm, setRegisterConfirm] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const registerStrength = useMemo(
     () =>
@@ -71,6 +75,7 @@ export default function AuthPage() {
       setIdentity(googleIdentity);
       setStep(2);
       setError("");
+      setSyncNotice("");
     } catch (appError) {
       setError(appError.message || "Không thể đăng nhập Google");
     }
@@ -82,6 +87,7 @@ export default function AuthPage() {
       setIdentity(walletIdentity);
       setStep(2);
       setError("");
+      setSyncNotice("");
     } catch (appError) {
       setError(appError.message || "Không thể kết nối ví");
     }
@@ -95,6 +101,7 @@ export default function AuthPage() {
     setRegisterMaster("");
     setRegisterConfirm("");
     setError("");
+    setSyncNotice("");
   };
 
   const handleLogin = async (event) => {
@@ -106,8 +113,31 @@ export default function AuthPage() {
     }
     if (!loginMaster) return setError("Vui lòng nhập master password");
 
+    setError("");
+    setSyncNotice("");
+
     const result = await unlockWithMasterPassword(loginMaster);
     if (!result.ok) return setError(result.message || "Master password không chính xác");
+
+    if (identity?.address && window.ethereum) {
+      setIsSyncing(true);
+      setSyncNotice("Đang kiểm tra dữ liệu mới nhất từ blockchain...");
+      try {
+        const syncResult = await syncVaultOnLoginIfNeeded(identity.address, {
+          onProgress: ({ message }) => {
+            if (message) setSyncNotice(message);
+          }
+        });
+
+        setSyncNotice(
+          syncResult.synced
+            ? `Đã đồng bộ ${syncResult.count ?? 0} mục từ chain.`
+            : syncResult.reason || "Không có dữ liệu mới trên chain."
+        );
+      } finally {
+        setIsSyncing(false);
+      }
+    }
 
     finalizeSession(identity);
   };
@@ -166,6 +196,7 @@ export default function AuthPage() {
               }`}
               type="button"
               onClick={() => resetStepFlow("login")}
+              disabled={isSyncing}
             >
               Đăng nhập
             </button>
@@ -175,6 +206,7 @@ export default function AuthPage() {
               }`}
               type="button"
               onClick={() => resetStepFlow("register")}
+              disabled={isSyncing}
             >
               Đăng ký
             </button>
@@ -182,10 +214,7 @@ export default function AuthPage() {
 
           <div className="rounded-2xl border border-app-border bg-app-surface-alt p-3 text-xs text-app-muted">
             <div className="mb-2 h-2 overflow-hidden rounded-full bg-app-surface-muted">
-              <div
-                className="h-full rounded-full bg-app-primary transition-all duration-300 ease-premium"
-                style={{ width: `${step * 50}%` }}
-              />
+              <div className="h-full rounded-full bg-app-primary transition-all duration-300 ease-premium" style={{ width: `${step * 50}%` }} />
             </div>
             Tiến trình: Bước {step}/2 {step === 1 ? "- Định danh tài khoản" : "- Nhập Master Password"}
           </div>
@@ -198,7 +227,7 @@ export default function AuthPage() {
                   className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-app-border bg-app-surface p-3 text-left shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-app-primary/40 hover:shadow-card active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus disabled:pointer-events-none disabled:opacity-50"
                   type="button"
                   onClick={handleSelectGoogle}
-                  disabled={authBusy}
+                  disabled={authBusy || isSyncing}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-bold text-[#4285f4] shadow-sm">
@@ -216,7 +245,7 @@ export default function AuthPage() {
                   className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-orange-400/30 bg-orange-500/10 p-3 text-left shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-orange-400/60 hover:bg-orange-500/15 hover:shadow-card active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:pointer-events-none disabled:opacity-50"
                   type="button"
                   onClick={handleSelectWallet}
-                  disabled={authBusy}
+                  disabled={authBusy || isSyncing}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-white shadow-sm shadow-orange-900/20">
@@ -243,6 +272,16 @@ export default function AuthPage() {
                 </p>
               </div>
 
+              {syncNotice ? (
+                <div className="rounded-2xl border border-app-border bg-app-surface-alt p-3">
+                  {isSyncing ? (
+                    <LoadingSpinner label="Đang đồng bộ..." description={syncNotice} />
+                  ) : (
+                    <p className="text-sm text-app-muted">{syncNotice}</p>
+                  )}
+                </div>
+              ) : null}
+
               {tab === "login" ? (
                 <form className="space-y-3" onSubmit={handleLogin}>
                   <p className="text-sm font-semibold">Bước 2: Xác thực Master Password để vào kho</p>
@@ -256,10 +295,11 @@ export default function AuthPage() {
                     type="password"
                     placeholder="Nhập master password"
                     value={loginMaster}
+                    disabled={isSyncing}
                     onChange={(event) => setLoginMaster(event.target.value)}
                   />
-                  <button className="btn-primary w-full" type="submit" disabled={authBusy || !hasMasterPassword}>
-                    Đăng nhập vào Vault
+                  <button className="btn-primary w-full" type="submit" disabled={authBusy || isSyncing || !hasMasterPassword}>
+                    {isSyncing ? "Đang đồng bộ..." : "Đăng nhập vào Vault"}
                   </button>
                 </form>
               ) : (
@@ -290,7 +330,7 @@ export default function AuthPage() {
                 </form>
               )}
 
-              <button className="btn-soft w-full" type="button" onClick={() => setStep(1)}>
+              <button className="btn-soft w-full" type="button" onClick={() => setStep(1)} disabled={isSyncing}>
                 Quay lại bước định danh
               </button>
             </>

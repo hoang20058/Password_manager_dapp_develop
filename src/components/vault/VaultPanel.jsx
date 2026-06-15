@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Copy,
   Eye,
@@ -15,7 +15,9 @@ import {
   UserRound
 } from "lucide-react";
 import Modal from "../ui/Modal";
+import LoadingSpinner from "../ui/LoadingSpinner";
 import PasswordStrengthHint from "../security/PasswordStrengthHint";
+import { getUserFriendlyMessage } from "../../utils/errorHandling";
 import { evaluatePasswordStrength, getDomainName, isSafePassword } from "../../utils/password";
 
 const emptyForm = { url: "", username: "", password: "" };
@@ -51,6 +53,19 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
   const [editingIndex, setEditingIndex] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [showFormPassword, setShowFormPassword] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("Đang lưu...");
+  const [saveSeconds, setSaveSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!isSaving) {
+      setSaveSeconds(0);
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => setSaveSeconds((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [isSaving]);
 
   const stats = {
     total: vaultList.length,
@@ -80,64 +95,100 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
   }, [mode, search, vaultList]);
 
   const openCreate = () => {
+    if (isSaving) return;
     setEditingIndex(null);
     setForm(emptyForm);
     setShowFormPassword(false);
+    setSaveMessage("Đang lưu...");
     setModalOpen(true);
   };
 
   const openEdit = (index) => {
+    if (isSaving) return;
     setEditingIndex(index);
     setForm(vaultList[index]);
     setShowFormPassword(false);
+    setSaveMessage("Đang lưu...");
     setModalOpen(true);
   };
 
-  const save = (event) => {
+  const save = async (event) => {
     event.preventDefault();
-    if (!form.url || !form.username || !form.password) return;
-    const strength = evaluatePasswordStrength(form.password, [form.url, form.username]);
 
-    if (editingIndex === null) {
-      setVaults((prev) => [...prev, form]);
-      onToast(
-        strength.meetsPolicy
-          ? "Đã thêm mật khẩu mới"
-          : "Đã thêm, nhưng mật khẩu còn yếu. Nên đổi sớm để an toàn hơn.",
-        strength.meetsPolicy ? "success" : "warning"
-      );
-    } else {
-      setVaults((prev) => prev.map((item, index) => (index === editingIndex ? form : item)));
-      onToast(
-        strength.meetsPolicy
-          ? "Đã cập nhật mật khẩu"
-          : "Đã cập nhật, nhưng mật khẩu còn yếu. Nên đổi sớm.",
-        strength.meetsPolicy ? "success" : "warning"
-      );
+    if (!form.url || !form.username || !form.password) {
+      onToast("Vui lòng nhập đầy đủ URL, username và password.", "danger");
+      return;
     }
 
-    setModalOpen(false);
-    setForm(emptyForm);
-    setEditingIndex(null);
+    const strength = evaluatePasswordStrength(form.password, [form.url, form.username]);
+    const updatedVaults = editingIndex === null
+      ? [...vaultList, form]
+      : vaultList.map((item, index) => (index === editingIndex ? form : item));
+
+    setIsSaving(true);
+    setSaveMessage("Đang mã hóa vault...");
+    onToast("Đang lưu vault. Hãy xác nhận MetaMask nếu được yêu cầu.", "info", { duration: 15000 });
+
+    try {
+      const result = await setVaults(updatedVaults, {
+        onProgress: ({ message }) => {
+          if (message) setSaveMessage(message);
+        }
+      });
+
+      const action = editingIndex === null ? "thêm" : "cập nhật";
+      const syncStatus = result?.sync?.status;
+
+      if (syncStatus === "synced") {
+        onToast(
+          strength.meetsPolicy
+            ? `Đã ${action} mật khẩu và đồng bộ blockchain.`
+            : `Đã ${action} và đồng bộ, nhưng mật khẩu còn yếu. Nên đổi sớm.`,
+          strength.meetsPolicy ? "success" : "warning",
+          { duration: 5000 }
+        );
+      } else if (syncStatus === "local_fallback") {
+        onToast(result.sync.message || "Đã lưu local. Web3 sync sẽ cần thử lại sau.", "warning", { duration: 7000 });
+      } else {
+        onToast(
+          strength.meetsPolicy
+            ? `Đã ${action} mật khẩu vào vault.`
+            : `Đã ${action}, nhưng mật khẩu còn yếu. Nên đổi sớm.`,
+          strength.meetsPolicy ? "success" : "warning"
+        );
+      }
+
+      setModalOpen(false);
+      setForm(emptyForm);
+      setEditingIndex(null);
+    } catch (error) {
+      onToast(getUserFriendlyMessage(error), "danger", { duration: 8000 });
+    } finally {
+      setIsSaving(false);
+      setSaveMessage("Đang lưu...");
+    }
   };
 
   const remove = (index) => {
     const deletedItem = vaultList[index];
-    setVaults((prev) => prev.filter((_, idx) => idx !== index));
-    onToast("Đã xóa mật khẩu", "warning", {
-      action: {
-        label: "Hoàn tác",
-        onClick: () => {
-          if (!deletedItem) return;
-          setVaults((prev) => {
-            const next = [...prev];
-            next.splice(index, 0, deletedItem);
-            return next;
-          });
-        }
-      },
-      duration: 6000
-    });
+    setVaults((prev) => prev.filter((_, idx) => idx !== index))
+      .then(() => {
+        onToast("Đã xóa mật khẩu", "warning", {
+          action: {
+            label: "Hoàn tác",
+            onClick: () => {
+              if (!deletedItem) return;
+              setVaults((prev) => {
+                const next = [...prev];
+                next.splice(index, 0, deletedItem);
+                return next;
+              }).catch((error) => onToast(getUserFriendlyMessage(error), "danger"));
+            }
+          },
+          duration: 6000
+        });
+      })
+      .catch((error) => onToast(getUserFriendlyMessage(error), "danger", { duration: 8000 }));
   };
 
   const copyPassword = async (password) => {
@@ -150,30 +201,9 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
   };
 
   const statCards = [
-    {
-      id: "all",
-      label: "Tổng số",
-      value: stats.total,
-      Icon: KeyRound,
-      tone: "text-app-primary",
-      helper: "Mục đang lưu"
-    },
-    {
-      id: "safe",
-      label: "An toàn",
-      value: stats.safe,
-      Icon: ShieldCheck,
-      tone: "text-app-success",
-      helper: "Đạt chính sách"
-    },
-    {
-      id: "risk",
-      label: "Rủi ro",
-      value: stats.risk,
-      Icon: ShieldAlert,
-      tone: "text-app-danger",
-      helper: "Cần xử lý"
-    }
+    { id: "all", label: "Tổng số", value: stats.total, Icon: KeyRound, tone: "text-app-primary", helper: "Mục đang lưu" },
+    { id: "safe", label: "An toàn", value: stats.safe, Icon: ShieldCheck, tone: "text-app-success", helper: "Đạt chính sách" },
+    { id: "risk", label: "Rủi ro", value: stats.risk, Icon: ShieldAlert, tone: "text-app-danger", helper: "Cần xử lý" }
   ];
 
   const hasSearch = search.trim().length > 0;
@@ -186,9 +216,9 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           <p className="text-sm font-medium text-app-muted">Vault overview</p>
           <h2 className="mt-1 text-2xl font-bold tracking-tight text-app-text">Trang chủ Vault</h2>
         </div>
-        <button className="btn-primary" onClick={openCreate} type="button">
+        <button className="btn-primary" onClick={openCreate} type="button" disabled={isSaving}>
           <Plus className="h-4 w-4" />
-          Thêm mật khẩu mới
+          {isSaving ? `Đang lưu... (${saveSeconds}s)` : "Thêm mật khẩu mới"}
         </button>
       </div>
 
@@ -204,6 +234,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
               key={id}
               onClick={() => setMode(id)}
               type="button"
+              disabled={isSaving}
             >
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-app-muted">{label}</p>
@@ -288,20 +319,10 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                     </div>
 
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        className="icon-button"
-                        type="button"
-                        onClick={() => copyPassword(item.password)}
-                        aria-label={`Sao chép mật khẩu cho ${domain}`}
-                      >
+                      <button className="icon-button" type="button" onClick={() => copyPassword(item.password)} aria-label={`Sao chép mật khẩu cho ${domain}`} disabled={isSaving}>
                         <Copy className="h-4 w-4" />
                       </button>
-                      <button
-                        className="icon-button"
-                        type="button"
-                        onClick={() => openEdit(item.index)}
-                        aria-label={`Chỉnh sửa ${domain}`}
-                      >
+                      <button className="icon-button" type="button" onClick={() => openEdit(item.index)} aria-label={`Chỉnh sửa ${domain}`} disabled={isSaving}>
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button
@@ -309,6 +330,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                         type="button"
                         onClick={() => remove(item.index)}
                         aria-label={`Xóa ${domain}`}
+                        disabled={isSaving}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -325,11 +347,24 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
         open={isModalOpen}
         title={editingIndex === null ? "Thêm mật khẩu" : "Chỉnh sửa mật khẩu"}
         onClose={() => {
+          if (isSaving) return;
           setModalOpen(false);
           setShowFormPassword(false);
         }}
       >
-        <form className="space-y-4" onSubmit={save}>
+        <form className="relative space-y-4" onSubmit={save}>
+          {isSaving ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-app-surface/85 p-6 backdrop-blur-sm">
+              <div className="rounded-2xl border border-app-border bg-app-surface p-4 shadow-panel">
+                <LoadingSpinner
+                  size="lg"
+                  label={`Đang lưu... (${saveSeconds}s)`}
+                  description={saveMessage || "Đang chờ xác nhận và đồng bộ dữ liệu."}
+                />
+              </div>
+            </div>
+          ) : null}
+
           <label className="block space-y-1.5">
             <span className="text-xs font-semibold text-app-muted">Website URL</span>
             <input
@@ -337,6 +372,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
               placeholder="https://example.com"
               required
               value={form.url}
+              disabled={isSaving}
               onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
             />
           </label>
@@ -347,6 +383,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
               placeholder="name@example.com"
               required
               value={form.username}
+              disabled={isSaving}
               onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
             />
           </label>
@@ -359,6 +396,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                 placeholder="Nhập mật khẩu"
                 required
                 value={form.password}
+                disabled={isSaving}
                 onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
               />
               <button
@@ -366,6 +404,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                 type="button"
                 onClick={() => setShowFormPassword((prev) => !prev)}
                 aria-label={showFormPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                disabled={isSaving}
               >
                 {showFormPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -376,8 +415,8 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
             userInputs={[form.url, form.username]}
             policyText="Mật khẩu lưu trong vault nên đạt mức Khá trở lên và tối thiểu 8 ký tự."
           />
-          <button className="btn-primary w-full" type="submit">
-            Lưu mật khẩu
+          <button className="btn-primary w-full" type="submit" disabled={isSaving}>
+            {isSaving ? `Đang lưu... (${saveSeconds}s)` : "Lưu mật khẩu"}
           </button>
         </form>
       </Modal>

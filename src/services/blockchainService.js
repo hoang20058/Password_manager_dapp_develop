@@ -1,165 +1,136 @@
 import { BrowserProvider, Contract } from "ethers";
+import {
+  ErrorCodes,
+  VaultServiceError,
+  getUserFriendlyMessage,
+  isRetryableError,
+  normalizeError,
+  validateCID,
+  validateEthereumAddress,
+  validateNetworkMatch
+} from "../utils/errorHandling";
 
-/**
- * ABI cho VaultPointer contract
- * Định nghĩa các function: updateVaultPointer, getVaultPointer
- */
 const vaultContractAbi = [
   {
-    "type": "function",
-    "name": "updateVaultPointer",
-    "inputs": [
-      {
-        "name": "_cid",
-        "type": "string"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    type: "function",
+    name: "updateVaultPointer",
+    inputs: [{ name: "_cid", type: "string" }],
+    outputs: [],
+    stateMutability: "nonpayable"
   },
   {
-    "type": "function",
-    "name": "getVaultPointer",
-    "inputs": [
-      {
-        "name": "_user",
-        "type": "address"
-      }
+    type: "function",
+    name: "getVaultPointer",
+    inputs: [{ name: "_user", type: "address" }],
+    outputs: [
+      { name: "cid", type: "string" },
+      { name: "updatedAt", type: "uint256" }
     ],
-    "outputs": [
-      {
-        "name": "cid",
-        "type": "string"
-      },
-      {
-        "name": "updatedAt",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view"
+    stateMutability: "view"
   },
   {
-    "type": "event",
-    "name": "VaultUpdated",
-    "inputs": [
-      {
-        "name": "user",
-        "type": "address",
-        "indexed": true
-      },
-      {
-        "name": "cid",
-        "type": "string"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint256"
-      }
+    type: "event",
+    name: "VaultUpdated",
+    inputs: [
+      { name: "user", type: "address", indexed: true },
+      { name: "cid", type: "string" },
+      { name: "timestamp", type: "uint256" }
     ]
   }
 ];
 
-/**
- * Cập nhật IPFS CID pointer lên blockchain
- * @param {string} cid - IPFS Content Identifier
- * @returns {Object} - { success: boolean, txHash: string | null, error?: string }
- */
+function getContractAddress() {
+  const contractAddress = import.meta.env.VITE_VAULT_CONTRACT_ADDRESS;
+  if (!contractAddress || !/^0x[a-fA-F0-9]{40}$/.test(contractAddress)) {
+    throw new VaultServiceError(ErrorCodes.CONTRACT_ADDRESS_MISSING);
+  }
+  return contractAddress;
+}
+
+function getEthereumProvider() {
+  if (!globalThis.window?.ethereum) {
+    throw new VaultServiceError(ErrorCodes.METAMASK_NOT_DETECTED);
+  }
+  return window.ethereum;
+}
+
 export async function updateVaultCidOnChain(cid) {
   try {
-    const contractAddress = import.meta.env.VITE_VAULT_CONTRACT_ADDRESS;
+    const validCid = validateCID(cid);
+    const provider = new BrowserProvider(getEthereumProvider());
+    const contractAddress = getContractAddress();
 
-    if (!window.ethereum) {
-      return {
-        success: false,
-        txHash: null,
-        error: "MetaMask not detected"
-      };
+    await validateNetworkMatch();
+
+    let accounts = [];
+    try {
+      accounts = await provider.send("eth_requestAccounts", []);
+    } catch (error) {
+      throw normalizeError(error, ErrorCodes.USER_REJECTED);
     }
 
-    if (!contractAddress) {
-      return {
-        success: false,
-        txHash: null,
-        error: "Contract address not configured"
-      };
+    if (!accounts.length) {
+      throw new VaultServiceError(ErrorCodes.METAMASK_NOT_DETECTED, "No MetaMask account is connected");
     }
 
-    if (!cid || cid.trim() === "") {
-      return {
-        success: false,
-        txHash: null,
-        error: "CID cannot be empty"
-      };
-    }
-
-    // Kết nối đến MetaMask provider
-    const provider = new BrowserProvider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
     const signer = await provider.getSigner();
     const contract = new Contract(contractAddress, vaultContractAbi, signer);
 
-    // Gọi updateVaultPointer trên contract
-    const tx = await contract.updateVaultPointer(cid);
+    try {
+      await contract.updateVaultPointer.estimateGas(validCid);
+    } catch (error) {
+      const normalized = normalizeError(error, ErrorCodes.GAS_ESTIMATION_FAILED);
+      if (!isRetryableError(normalized)) throw normalized;
+    }
+
+    const tx = await contract.updateVaultPointer(validCid);
     const receipt = await tx.wait();
+
+    if (!receipt || receipt.status === 0) {
+      throw new VaultServiceError(ErrorCodes.TRANSACTION_FAILED, "Transaction reverted", receipt);
+    }
 
     return {
       success: true,
       txHash: tx.hash,
-      blockNumber: receipt?.blockNumber
+      blockNumber: receipt.blockNumber
     };
   } catch (error) {
-    console.error("Error updating vault CID on chain:", error);
+    const normalized = normalizeError(error, ErrorCodes.TRANSACTION_FAILED);
     return {
       success: false,
       txHash: null,
-      error: error.message || "Transaction failed"
+      error: getUserFriendlyMessage(normalized),
+      code: normalized.code,
+      canRetry: isRetryableError(normalized),
+      details: normalized.details || normalized.message
     };
   }
 }
 
-/**
- * Lấy IPFS CID pointer từ blockchain
- * @param {string} userAddress - Địa chỉ ví của người dùng
- * @returns {Object} - { cid: string, updatedAt: number, error?: string }
- */
 export async function getVaultCidFromChain(userAddress) {
   try {
-    const contractAddress = import.meta.env.VITE_VAULT_CONTRACT_ADDRESS;
+    const validAddress = validateEthereumAddress(userAddress);
+    const provider = new BrowserProvider(getEthereumProvider());
+    const contract = new Contract(getContractAddress(), vaultContractAbi, provider);
 
-    if (!window.ethereum) {
-      return {
-        cid: "",
-        updatedAt: 0,
-        error: "MetaMask not detected"
-      };
-    }
+    await validateNetworkMatch();
 
-    if (!contractAddress) {
-      return {
-        cid: "",
-        updatedAt: 0,
-        error: "Contract address not configured"
-      };
-    }
-
-    // Kết nối đến provider (read-only, không cần signer)
-    const provider = new BrowserProvider(window.ethereum);
-    const contract = new Contract(contractAddress, vaultContractAbi, provider);
-
-    // Gọi getVaultPointer để lấy dữ liệu
-    const [cid, updatedAt] = await contract.getVaultPointer(userAddress);
+    const [cid, updatedAt] = await contract.getVaultPointer(validAddress);
 
     return {
-      cid,
-      updatedAt: Number(updatedAt),
+      cid: cid || "",
+      updatedAt: Number(updatedAt) || 0,
       error: null
     };
   } catch (error) {
-    console.error("Error getting vault CID from chain:", error);
+    const normalized = normalizeError(error, ErrorCodes.SYNC_FAILED);
     return {
       cid: "",
       updatedAt: 0,
-      error: error.message || "Failed to fetch vault pointer"
+      error: getUserFriendlyMessage(normalized),
+      code: normalized.code,
+      details: normalized.details || normalized.message
     };
   }
 }
