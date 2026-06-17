@@ -27,17 +27,38 @@ export async function signInWithGoogle() {
   const auth = getFirebaseAuth();
 
   if (!auth) {
+    const params = new URLSearchParams(window.location.search);
+    let email = params.get("mockEmail") || params.get("email");
+
+    if (!email) {
+      if (globalThis.navigator?.webdriver) {
+        email = "resettest@gmail.com";
+      } else {
+        email = prompt(
+          "ĐĂNG NHẬP DEMO (Chưa cấu hình Firebase)\n\nNhập email Google bạn muốn dùng để test:",
+          "user1@gmail.com"
+        );
+      }
+    }
+
+    if (!email || !email.trim()) {
+      throw new Error("Đăng nhập bằng Google bị hủy");
+    }
+    const cleanEmail = email.trim();
     return {
       provider: "google",
-      uid: "demo-google-user",
-      displayName: "Demo Google User",
-      email: "demo@wallet.local",
+      uid: `mock-google-uid-${cleanEmail}`,
+      displayName: cleanEmail.split("@")[0],
+      email: cleanEmail,
       photoURL: "https://placehold.co/96",
       accessMode: "mock"
     };
   }
 
   const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({
+    prompt: "select_account"
+  });
   const result = await signInWithPopup(auth, provider);
   const user = result.user;
 

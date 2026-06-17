@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, Link2, Shield, Wallet } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { evaluatePasswordStrength } from "../utils/password";
+import { getIdentityAddress, vaultService } from "../services/vaultService";
 import PasswordStrengthHint from "../components/security/PasswordStrengthHint";
 import LoadingSpinner from "../components/ui/LoadingSpinner";
 
@@ -16,19 +17,19 @@ export default function AuthPage() {
     authBusy,
     setSession,
     setProfile,
-    hasMasterPassword,
     createMasterPassword,
-    unlockWithMasterPassword,
-    syncVaultOnLoginIfNeeded
+    unlockWithMasterPassword
   } = useApp();
   const [error, setError] = useState("");
   const [syncNotice, setSyncNotice] = useState("");
   const [tab, setTab] = useState("login");
-  const [step, setStep] = useState(1);
   const [identity, setIdentity] = useState(null);
+  const [userAddress, setUserAddress] = useState("");
+  const [isRegistered, setIsRegistered] = useState(false);
   const [loginMaster, setLoginMaster] = useState("");
   const [registerMaster, setRegisterMaster] = useState("");
   const [registerConfirm, setRegisterConfirm] = useState("");
+  const [resetConfirmed, setResetConfirmed] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const registerStrength = useMemo(
@@ -36,22 +37,22 @@ export default function AuthPage() {
       evaluatePasswordStrength(registerMaster, [
         identity?.email || "",
         identity?.displayName || "",
-        identity?.address || ""
+        userAddress || ""
       ]),
-    [identity?.address, identity?.displayName, identity?.email, registerMaster]
+    [identity?.displayName, identity?.email, userAddress, registerMaster]
   );
 
-  const applyIdentityToProfile = (selectedIdentity) => {
+  const applyIdentityToProfile = (selectedIdentity, resolvedAddress) => {
     if (!selectedIdentity) return;
     setProfile((prev) => ({
       ...prev,
       name: selectedIdentity.displayName || prev.name,
       email: selectedIdentity.email || prev.email,
-      username: selectedIdentity.email?.split("@")[0] || selectedIdentity.address?.slice(0, 10) || prev.username
+      username: selectedIdentity.email?.split("@")[0] || resolvedAddress?.slice(0, 10) || prev.username
     }));
   };
 
-  const finalizeSession = (selectedIdentity) => {
+  const finalizeSession = (selectedIdentity, resolvedAddress) => {
     const isGoogle = selectedIdentity.provider === "google";
     setSession({
       isAuthenticated: true,
@@ -59,7 +60,7 @@ export default function AuthPage() {
       google: isGoogle ? selectedIdentity : null,
       wallet: isGoogle ? null : selectedIdentity
     });
-    applyIdentityToProfile(selectedIdentity);
+    applyIdentityToProfile(selectedIdentity, resolvedAddress);
     navigate("/app/vault", { replace: true });
   };
 
@@ -69,34 +70,12 @@ export default function AuthPage() {
     }
   }, [bootstrapped, navigate, session]);
 
-  const handleSelectGoogle = async () => {
-    try {
-      const googleIdentity = await signInGoogle(false);
-      setIdentity(googleIdentity);
-      setStep(2);
-      setError("");
-      setSyncNotice("");
-    } catch (appError) {
-      setError(appError.message || "Không thể đăng nhập Google");
-    }
-  };
-
-  const handleSelectWallet = async () => {
-    try {
-      const walletIdentity = await connectWallet(false);
-      setIdentity(walletIdentity);
-      setStep(2);
-      setError("");
-      setSyncNotice("");
-    } catch (appError) {
-      setError(appError.message || "Không thể kết nối ví");
-    }
-  };
-
-  const resetStepFlow = (nextTab) => {
+  const resetFormFlow = (nextTab) => {
     setTab(nextTab);
-    setStep(1);
     setIdentity(null);
+    setUserAddress("");
+    setIsRegistered(false);
+    setResetConfirmed(false);
     setLoginMaster("");
     setRegisterMaster("");
     setRegisterConfirm("");
@@ -104,64 +83,120 @@ export default function AuthPage() {
     setSyncNotice("");
   };
 
-  const handleLogin = async (event) => {
-    event.preventDefault();
-    if (!identity) return setError("Vui lòng chọn Google hoặc Connect ví trước khi đăng nhập");
-    if (!hasMasterPassword) {
-      setTab("register");
-      return setError("Bạn chưa đăng ký master password. Hệ thống đã chuyển sang tab Đăng ký.");
-    }
-    if (!loginMaster) return setError("Vui lòng nhập master password");
-
+  const handleTabChange = (nextTab) => {
+    setTab(nextTab);
     setError("");
     setSyncNotice("");
-
-    const result = await unlockWithMasterPassword(loginMaster);
-    if (!result.ok) return setError(result.message || "Master password không chính xác");
-
-    if (identity?.address && window.ethereum) {
-      setIsSyncing(true);
-      setSyncNotice("Đang kiểm tra dữ liệu mới nhất từ blockchain...");
-      try {
-        const syncResult = await syncVaultOnLoginIfNeeded(identity.address, {
-          onProgress: ({ message }) => {
-            if (message) setSyncNotice(message);
-          }
-        });
-
-        setSyncNotice(
-          syncResult.synced
-            ? `Đã đồng bộ ${syncResult.count ?? 0} mục từ chain.`
-            : syncResult.reason || "Không có dữ liệu mới trên chain."
-        );
-      } finally {
-        setIsSyncing(false);
-      }
-    }
-
-    finalizeSession(identity);
+    setResetConfirmed(false);
   };
 
-  const handleRegister = async (event) => {
-    event.preventDefault();
-    if (!identity) return setError("Vui lòng chọn Google hoặc Connect ví trước khi đăng ký");
-    if (hasMasterPassword) return setError("Master password đã tồn tại. Hãy dùng tab Đăng nhập");
+  const handleLoginWithProvider = async (providerType) => {
+    if (!loginMaster) return setError("Vui lòng nhập master password");
+    setError("");
+    setIsSyncing(true);
+    setSyncNotice(`Đang kết nối danh tính bằng ${providerType === "google" ? "Google" : "MetaMask"}...`);
+
+    try {
+      let identityResult;
+      if (providerType === "google") {
+        identityResult = await signInGoogle(false);
+      } else {
+        identityResult = await connectWallet(false);
+      }
+
+      setIdentity(identityResult);
+      const addr = await getIdentityAddress(identityResult);
+      setUserAddress(addr);
+
+      setSyncNotice("Đang kiểm tra trạng thái tài khoản từ Web3...");
+      const registered = await vaultService.checkUserRegistration(addr, providerType);
+      setIsRegistered(registered);
+
+      if (!registered) {
+        setTab("register");
+        setRegisterMaster(loginMaster);
+        setRegisterConfirm(loginMaster);
+        setError("Tài khoản chưa có Master Password. Đã tự động chuyển sang tab Đăng ký với mật khẩu bạn nhập.");
+        return;
+      }
+
+      setSyncNotice("Đang tải dữ liệu từ IPFS & giải mã...");
+      const result = await unlockWithMasterPassword(loginMaster, addr, providerType, identityResult?.uid);
+      if (!result.ok) {
+        setError(result.message || "Master password không chính xác");
+        return;
+      }
+
+      setSyncNotice("Đăng nhập thành công! Đang chuyển hướng...");
+      finalizeSession(identityResult, addr);
+    } catch (err) {
+      setError(err.message || "Không thể đăng nhập.");
+    } finally {
+      setIsSyncing(false);
+      setSyncNotice("");
+    }
+  };
+
+  const handleRegisterWithProvider = async (providerType) => {
     if (!registerStrength.meetsPolicy) {
       return setError("Master password chưa đủ mạnh. Hãy tăng độ dài và độ phức tạp.");
     }
     if (registerMaster !== registerConfirm) return setError("Xác nhận master password không khớp");
+    if (isRegistered && !resetConfirmed) {
+      return setError("Tài khoản ví này đã được đăng ký. Vui lòng xác nhận đồng ý xóa dữ liệu cũ để Reset.");
+    }
+
+    setError("");
+    setIsSyncing(true);
+    setSyncNotice(`Đang kết nối danh tính bằng ${providerType === "google" ? "Google" : "MetaMask"}...`);
 
     try {
-      await createMasterPassword(registerMaster);
-      finalizeSession(identity);
-    } catch (appError) {
-      setError(appError.message || "Không thể đăng ký");
+      let identityResult;
+      if (providerType === "google") {
+        identityResult = await signInGoogle(false);
+      } else {
+        identityResult = await connectWallet(false);
+      }
+
+      setIdentity(identityResult);
+      const addr = await getIdentityAddress(identityResult);
+      setUserAddress(addr);
+
+      setSyncNotice("Đang kiểm tra trạng thái tài khoản từ Web3...");
+      const registered = await vaultService.checkUserRegistration(addr, providerType);
+      setIsRegistered(registered);
+
+      if (registered && !resetConfirmed) {
+        setError("Tài khoản này đã được đăng ký. Vui lòng kiểm tra và tích vào ô xác nhận 'Tôi đồng ý xóa sạch dữ liệu cũ' bên dưới và click Đăng ký lại để thực hiện Reset.");
+        return;
+      }
+
+      setSyncNotice("Đang tạo dữ liệu mới, upload IPFS và ghi pointer lên blockchain...");
+      const result = await createMasterPassword(registerMaster, addr, providerType, identityResult?.uid);
+      if (!result.ok) {
+        const errorMsg = result.message?.toLowerCase() || "";
+        if (errorMsg.includes("insufficient") || errorMsg.includes("gas")) {
+          setError(`Ví ảo Google của bạn không đủ phí gas. Vui lòng gửi Sepolia ETH vào địa chỉ ví này để tiếp tục đăng ký: ${addr}`);
+        } else {
+          setError(result.message || "Đăng ký thất bại.");
+        }
+        return;
+      }
+
+      setSyncNotice("Đăng ký thành công! Đang chuyển hướng...");
+      finalizeSession(identityResult, addr);
+    } catch (err) {
+      const errorMsg = err.message?.toLowerCase() || "";
+      if (errorMsg.includes("insufficient") || errorMsg.includes("gas")) {
+        setError(`Ví ảo Google của bạn không đủ phí gas. Vui lòng gửi Sepolia ETH vào địa chỉ ví này để tiếp tục đăng ký: ${userAddress || "ví ảo của bạn"}`);
+      } else {
+        setError(err.message || "Đăng ký thất bại.");
+      }
+    } finally {
+      setIsSyncing(false);
+      setSyncNotice("");
     }
   };
-
-  const selectedIdentity = identity
-    ? identity.email || identity.address || identity.displayName || identity.provider
-    : "Chưa chọn";
 
   return (
     <main className="flex min-h-[100dvh] items-center justify-center overflow-x-hidden bg-app-bg p-4 text-app-text sm:p-6">
@@ -174,28 +209,28 @@ export default function AuthPage() {
               </div>
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-200/80">Auth Gateway</p>
               <h1 className="mt-3 max-w-2xl text-3xl font-bold leading-tight lg:text-5xl">
-                Đăng nhập danh tính trước, mở kho bằng Master Password
+                Nhập Master Password trước, mở khóa bằng Danh tính
               </h1>
               <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300">
-                Google hoặc ví Web3 dùng để định danh. Master Password vẫn là chìa khóa cục bộ để mở dữ liệu mã hóa.
+                Nhập Master Password để mã hóa/giải mã, sau đó chọn tài khoản Google hoặc ví MetaMask để xác minh danh tính Web3 của bạn.
               </p>
             </div>
 
             <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-slate-200 backdrop-blur">
               <Link2 className="mr-2 inline-block h-4 w-4 text-emerald-200" />
-              Trạng thái master: <span className="font-semibold text-white">{hasMasterPassword ? "Đã tạo" : "Chưa tạo"}</span>
+              Hệ thống: <span className="font-semibold text-white">Chế độ Web3 Production</span>
             </div>
           </div>
         </section>
 
-        <section className="space-y-4 p-6 sm:p-8 lg:p-10">
+        <section className="space-y-6 p-6 sm:p-8 lg:p-10">
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-app-surface-alt p-1">
             <button
               className={`rounded-lg px-3 py-2 text-sm font-semibold transition-all duration-200 ease-premium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus ${
                 tab === "login" ? "bg-app-surface text-app-text shadow-sm" : "text-app-muted hover:text-app-text"
               }`}
               type="button"
-              onClick={() => resetStepFlow("login")}
+              onClick={() => handleTabChange("login")}
               disabled={isSyncing}
             >
               Đăng nhập
@@ -205,37 +240,71 @@ export default function AuthPage() {
                 tab === "register" ? "bg-app-surface text-app-text shadow-sm" : "text-app-muted hover:text-app-text"
               }`}
               type="button"
-              onClick={() => resetStepFlow("register")}
+              onClick={() => handleTabChange("register")}
               disabled={isSyncing}
             >
               Đăng ký
             </button>
           </div>
 
-          <div className="rounded-2xl border border-app-border bg-app-surface-alt p-3 text-xs text-app-muted">
-            <div className="mb-2 h-2 overflow-hidden rounded-full bg-app-surface-muted">
-              <div className="h-full rounded-full bg-app-primary transition-all duration-300 ease-premium" style={{ width: `${step * 50}%` }} />
-            </div>
-            Tiến trình: Bước {step}/2 {step === 1 ? "- Định danh tài khoản" : "- Nhập Master Password"}
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+            <p className="font-semibold">Lưu ý về Master Password</p>
+            <p className="mt-1 leading-6">
+              Mật khẩu này là chìa khóa duy nhất để bảo vệ dữ liệu. Nó được xử lý cục bộ trên thiết bị của bạn và không bao giờ được gửi đi.
+            </p>
           </div>
 
-          {step === 1 ? (
-            <div className="space-y-3 rounded-2xl border border-app-border bg-app-surface-alt/70 p-4">
-              <p className="text-sm font-semibold">Bước 1: Chọn phương thức định danh</p>
-              <div className="grid gap-3">
+          {userAddress && (
+            <div className="rounded-2xl border border-app-border bg-app-surface-alt p-3 text-xs text-app-text flex items-center justify-between gap-4">
+              <div className="space-y-1 min-w-0">
+                <p className="truncate"><span className="font-semibold text-app-muted">Danh tính kết nối:</span> {identity?.email || identity?.address || "Đã kết nối"}</p>
+                <p className="font-mono truncate"><span className="font-semibold text-app-muted">Ví Web3:</span> {userAddress}</p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-lg border border-app-border bg-app-surface px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                onClick={() => {
+                  setIdentity(null);
+                  setUserAddress("");
+                  setIsRegistered(false);
+                  setResetConfirmed(false);
+                  setError("");
+                }}
+                disabled={isSyncing}
+              >
+                Hủy kết nối
+              </button>
+            </div>
+          )}
+
+          {tab === "login" ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold block">Master Password</label>
+                <input
+                  className="field"
+                  type="password"
+                  placeholder="Nhập master password của bạn"
+                  value={loginMaster}
+                  disabled={isSyncing}
+                  onChange={(event) => setLoginMaster(event.target.value)}
+                />
+              </div>
+
+              <div className="space-y-3 pt-2">
                 <button
                   className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-app-border bg-app-surface p-3 text-left shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-app-primary/40 hover:shadow-card active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus disabled:pointer-events-none disabled:opacity-50"
                   type="button"
-                  onClick={handleSelectGoogle}
-                  disabled={authBusy || isSyncing}
+                  onClick={() => handleLoginWithProvider("google")}
+                  disabled={authBusy || isSyncing || !loginMaster}
                 >
                   <span className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-bold text-[#4285f4] shadow-sm">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-bold text-[#4285f4] shadow-sm">
                       G
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-app-text">Google Sign-in</span>
-                      <span className="block truncate text-xs text-app-muted">Xác thực nhanh bằng tài khoản Google</span>
+                      <span className="block text-sm font-semibold text-app-text">Đăng nhập bằng Google</span>
+                      <span className="block truncate text-xs text-app-muted">Mở ví non-custodial và giải mã</span>
                     </span>
                   </span>
                   <ArrowRight className="h-4 w-4 text-app-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-app-primary" />
@@ -244,99 +313,141 @@ export default function AuthPage() {
                 <button
                   className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-orange-400/30 bg-orange-500/10 p-3 text-left shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-orange-400/60 hover:bg-orange-500/15 hover:shadow-card active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:pointer-events-none disabled:opacity-50"
                   type="button"
-                  onClick={handleSelectWallet}
-                  disabled={authBusy || isSyncing}
+                  onClick={() => handleLoginWithProvider("metamask")}
+                  disabled={authBusy || isSyncing || !loginMaster}
                 >
                   <span className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-white shadow-sm shadow-orange-900/20">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-white shadow-sm shadow-orange-900/20">
                       <Wallet className="h-5 w-5" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-app-text">Connect MetaMask</span>
-                      <span className="block truncate text-xs text-app-muted">Kết nối ví Web3 trực tiếp</span>
+                      <span className="block text-sm font-semibold text-app-text">Đăng nhập bằng MetaMask</span>
+                      <span className="block truncate text-xs text-app-muted">Kết nối ví Web3 và giải mã</span>
+                    </span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 text-app-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-orange-500" />
+                </button>
+
+                {isRegistered && (
+                  <div className="text-xs text-app-muted text-center pt-2">
+                    Bạn quên mật khẩu master?{" "}
+                    <button
+                      type="button"
+                      className="font-semibold text-app-primary underline hover:text-emerald-500 focus:outline-none"
+                      onClick={() => handleTabChange("register")}
+                    >
+                      Reset tài khoản tại đây
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold block">Tạo Master Password</label>
+                <input
+                  className="field"
+                  type="password"
+                  placeholder="Nhập master password mới"
+                  value={registerMaster}
+                  disabled={isSyncing}
+                  onChange={(event) => setRegisterMaster(event.target.value)}
+                />
+              </div>
+
+              <PasswordStrengthHint
+                password={registerMaster}
+                userInputs={[identity?.email || "", identity?.displayName || ""]}
+                policyText="Mật khẩu master phải đạt mức Khá trở lên và tối thiểu 8 ký tự."
+              />
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold block">Xác nhận Master Password</label>
+                <input
+                  className="field"
+                  type="password"
+                  placeholder="Nhập lại mật khẩu để xác nhận"
+                  value={registerConfirm}
+                  disabled={isSyncing}
+                  onChange={(event) => setRegisterConfirm(event.target.value)}
+                />
+              </div>
+
+              {isRegistered && (
+                <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-800 dark:text-rose-200 space-y-2">
+                  <p className="font-semibold">Cảnh báo: Tài khoản ví này đã từng được đăng ký</p>
+                  <p className="leading-5">
+                    Nếu tiếp tục, toàn bộ mật khẩu cũ đã lưu trên Web3 sẽ bị xóa vĩnh viễn và không thể khôi phục.
+                  </p>
+                  <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+                      checked={resetConfirmed}
+                      onChange={(e) => setResetConfirmed(e.target.checked)}
+                      disabled={isSyncing}
+                    />
+                    <span>Tôi đồng ý xóa sạch dữ liệu cũ để đặt lại Master Password mới.</span>
+                  </label>
+                </div>
+              )}
+
+              <div className="space-y-3 pt-2">
+                <button
+                  className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-app-border bg-app-surface p-3 text-left shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-app-primary/40 hover:shadow-card active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus disabled:pointer-events-none disabled:opacity-50"
+                  type="button"
+                  onClick={() => handleRegisterWithProvider("google")}
+                  disabled={authBusy || isSyncing || !registerStrength.meetsPolicy || registerMaster !== registerConfirm || (isRegistered && !resetConfirmed)}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-bold text-[#4285f4] shadow-sm">
+                      G
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-app-text">
+                        {isRegistered ? "Reset và Đăng ký bằng Google" : "Đăng ký bằng Google"}
+                      </span>
+                      <span className="block truncate text-xs text-app-muted">
+                        {isRegistered ? "Ghi đè dữ liệu cũ bằng mật khẩu mới" : "Tạo ví ảo và lưu trữ lên Web3"}
+                      </span>
+                    </span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 text-app-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-app-primary" />
+                </button>
+
+                <button
+                  className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-orange-400/30 bg-orange-500/10 p-3 text-left shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-orange-400/60 hover:bg-orange-500/15 hover:shadow-card active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:pointer-events-none disabled:opacity-50"
+                  type="button"
+                  onClick={() => handleRegisterWithProvider("metamask")}
+                  disabled={authBusy || isSyncing || !registerStrength.meetsPolicy || registerMaster !== registerConfirm || (isRegistered && !resetConfirmed)}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-white shadow-sm shadow-orange-900/20">
+                      <Wallet className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-app-text">
+                        {isRegistered ? "Reset và Đăng ký bằng MetaMask" : "Đăng ký bằng MetaMask"}
+                      </span>
+                      <span className="block truncate text-xs text-app-muted">
+                        {isRegistered ? "Ghi đè dữ liệu cũ bằng mật khẩu mới" : "Kết nối ví và lưu trữ lên Web3"}
+                      </span>
                     </span>
                   </span>
                   <ArrowRight className="h-4 w-4 text-app-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-orange-500" />
                 </button>
               </div>
-              <p className="text-xs text-app-muted">Đã chọn: {selectedIdentity}</p>
             </div>
-          ) : null}
+          )}
 
-          {step === 2 ? (
-            <>
-              <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
-                <p className="font-semibold">Lưu ý quan trọng về Master Password</p>
-                <p className="mt-1 leading-6">
-                  Master Password dùng để mở kho dữ liệu. Nếu quên mật khẩu này, bạn có thể mất quyền truy cập vào dữ liệu đã lưu.
-                </p>
-              </div>
+          {isSyncing && syncNotice && (
+            <div className="rounded-2xl border border-app-border bg-app-surface-alt p-3">
+              <LoadingSpinner label="Đang đồng bộ..." description={syncNotice} />
+            </div>
+          )}
 
-              {syncNotice ? (
-                <div className="rounded-2xl border border-app-border bg-app-surface-alt p-3">
-                  {isSyncing ? (
-                    <LoadingSpinner label="Đang đồng bộ..." description={syncNotice} />
-                  ) : (
-                    <p className="text-sm text-app-muted">{syncNotice}</p>
-                  )}
-                </div>
-              ) : null}
-
-              {tab === "login" ? (
-                <form className="space-y-3" onSubmit={handleLogin}>
-                  <p className="text-sm font-semibold">Bước 2: Xác thực Master Password để vào kho</p>
-                  {!hasMasterPassword ? (
-                    <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
-                      Tài khoản này chưa có master password. Vui lòng chuyển sang tab Đăng ký để tạo master trước khi đăng nhập.
-                    </div>
-                  ) : null}
-                  <input
-                    className="field"
-                    type="password"
-                    placeholder="Nhập master password"
-                    value={loginMaster}
-                    disabled={isSyncing}
-                    onChange={(event) => setLoginMaster(event.target.value)}
-                  />
-                  <button className="btn-primary w-full" type="submit" disabled={authBusy || isSyncing || !hasMasterPassword}>
-                    {isSyncing ? "Đang đồng bộ..." : "Đăng nhập vào Vault"}
-                  </button>
-                </form>
-              ) : (
-                <form className="space-y-3" onSubmit={handleRegister}>
-                  <p className="text-sm font-semibold">Bước 2: Tạo Master Password lần đầu</p>
-                  <input
-                    className="field"
-                    type="password"
-                    placeholder="Tạo master password"
-                    value={registerMaster}
-                    onChange={(event) => setRegisterMaster(event.target.value)}
-                  />
-                  <PasswordStrengthHint
-                    password={registerMaster}
-                    userInputs={[identity?.email || "", identity?.displayName || "", identity?.address || ""]}
-                    policyText="Master password phải đạt mức Khá trở lên và tối thiểu 8 ký tự."
-                  />
-                  <input
-                    className="field"
-                    type="password"
-                    placeholder="Xác nhận master password"
-                    value={registerConfirm}
-                    onChange={(event) => setRegisterConfirm(event.target.value)}
-                  />
-                  <button className="btn-primary w-full" type="submit" disabled={authBusy || !registerStrength.meetsPolicy}>
-                    Đăng ký và vào Vault
-                  </button>
-                </form>
-              )}
-
-              <button className="btn-soft w-full" type="button" onClick={() => setStep(1)} disabled={isSyncing}>
-                Quay lại bước định danh
-              </button>
-            </>
-          ) : null}
-
-          {error ? <div className="panel border-rose-400/40 p-4 text-sm text-rose-600 dark:text-rose-300">{error}</div> : null}
+          {error ? <div className="panel border-rose-400/40 p-4 text-sm text-rose-600 dark:text-rose-300 break-all">{error}</div> : null}
         </section>
       </div>
     </main>

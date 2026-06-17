@@ -1,4 +1,4 @@
-import { BrowserProvider, Contract } from "ethers";
+import { BrowserProvider, Contract, JsonRpcProvider, Wallet } from "ethers";
 import {
   ErrorCodes,
   VaultServiceError,
@@ -9,6 +9,9 @@ import {
   validateEthereumAddress,
   validateNetworkMatch
 } from "../utils/errorHandling";
+import { faucetService } from "./faucetService";
+
+const PUBLIC_SEPOLIA_RPC = "https://ethereum-sepolia-rpc.publicnode.com";
 
 const vaultContractAbi = [
   {
@@ -54,26 +57,61 @@ function getEthereumProvider() {
   return window.ethereum;
 }
 
-export async function updateVaultCidOnChain(cid) {
+export async function getBlockchainSigner(providerType, uid = null) {
+  if (providerType === "google") {
+    if (!uid) {
+      throw new VaultServiceError(ErrorCodes.INVALID_ADDRESS, "Google UID is required for non-custodial wallet");
+    }
+    // Generate private key from Google UID client-side deterministically
+    const encoder = new TextEncoder();
+    const data = encoder.encode(uid + "GoogleWeb3VaultSaltSecret");
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const privateKey = "0x" + hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+    const provider = new JsonRpcProvider(import.meta.env.VITE_RPC_URL || PUBLIC_SEPOLIA_RPC);
+    return new Wallet(privateKey, provider);
+  }
+
+  // MetaMask
+  const provider = new BrowserProvider(getEthereumProvider());
+  let accounts = [];
+  try {
+    accounts = await provider.send("eth_requestAccounts", []);
+  } catch (error) {
+    throw normalizeError(error, ErrorCodes.USER_REJECTED);
+  }
+
+  if (!accounts.length) {
+    throw new VaultServiceError(ErrorCodes.METAMASK_NOT_DETECTED, "No MetaMask account is connected");
+  }
+
+  return provider.getSigner();
+}
+
+export async function getBlockchainProvider(providerType = "metamask") {
+  if (providerType === "google" || !globalThis.window?.ethereum) {
+    return new JsonRpcProvider(import.meta.env.VITE_RPC_URL || PUBLIC_SEPOLIA_RPC);
+  }
+  return new BrowserProvider(getEthereumProvider());
+}
+
+export async function updateVaultCidOnChain(cid, providerType = "metamask", uid = null) {
   try {
     const validCid = validateCID(cid);
-    const provider = new BrowserProvider(getEthereumProvider());
+    const signer = await getBlockchainSigner(providerType, uid);
     const contractAddress = getContractAddress();
 
-    await validateNetworkMatch();
-
-    let accounts = [];
-    try {
-      accounts = await provider.send("eth_requestAccounts", []);
-    } catch (error) {
-      throw normalizeError(error, ErrorCodes.USER_REJECTED);
+    if (providerType === "google") {
+      if (!uid) {
+        throw new VaultServiceError(ErrorCodes.INVALID_ADDRESS, "Google UID is required for gas funding");
+      }
+      const virtualWalletAddress = await signer.getAddress();
+      await faucetService.ensureGas(virtualWalletAddress, uid);
+    } else {
+      await validateNetworkMatch();
     }
 
-    if (!accounts.length) {
-      throw new VaultServiceError(ErrorCodes.METAMASK_NOT_DETECTED, "No MetaMask account is connected");
-    }
-
-    const signer = await provider.getSigner();
     const contract = new Contract(contractAddress, vaultContractAbi, signer);
 
     try {
@@ -108,13 +146,15 @@ export async function updateVaultCidOnChain(cid) {
   }
 }
 
-export async function getVaultCidFromChain(userAddress) {
+export async function getVaultCidFromChain(userAddress, providerType = "metamask") {
   try {
     const validAddress = validateEthereumAddress(userAddress);
-    const provider = new BrowserProvider(getEthereumProvider());
+    const provider = await getBlockchainProvider(providerType);
     const contract = new Contract(getContractAddress(), vaultContractAbi, provider);
 
-    await validateNetworkMatch();
+    if (providerType === "metamask" && globalThis.window?.ethereum) {
+      await validateNetworkMatch();
+    }
 
     const [cid, updatedAt] = await contract.getVaultPointer(validAddress);
 

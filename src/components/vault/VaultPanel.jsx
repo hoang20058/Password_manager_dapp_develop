@@ -17,8 +17,10 @@ import {
 import Modal from "../ui/Modal";
 import LoadingSpinner from "../ui/LoadingSpinner";
 import PasswordStrengthHint from "../security/PasswordStrengthHint";
-import { getUserFriendlyMessage } from "../../utils/errorHandling";
+import { getUserFriendlyMessage, normalizeError, ErrorCodes } from "../../utils/errorHandling";
 import { evaluatePasswordStrength, getDomainName, isSafePassword } from "../../utils/password";
+import { useApp } from "../../context/AppContext";
+import { vaultService } from "../../services/vaultService";
 
 const emptyForm = { url: "", username: "", password: "" };
 
@@ -46,6 +48,7 @@ function VaultSkeleton() {
 }
 
 export default function VaultPanel({ vaults, setVaults, search = "", onToast }) {
+  const { encryptionKey } = useApp();
   const vaultList = Array.isArray(vaults) ? vaults : [];
   const isLoading = !Array.isArray(vaults);
   const [mode, setMode] = useState("all");
@@ -120,75 +123,59 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
       return;
     }
 
-    const strength = evaluatePasswordStrength(form.password, [form.url, form.username]);
     const updatedVaults = editingIndex === null
       ? [...vaultList, form]
       : vaultList.map((item, index) => (index === editingIndex ? form : item));
 
     setIsSaving(true);
     setSaveMessage("Đang mã hóa vault...");
-    onToast("Đang lưu vault. Hãy xác nhận MetaMask nếu được yêu cầu.", "info", { duration: 15000 });
+    onToast("Đang mã hóa và đẩy lên Web3...", "info", { duration: 15000 });
 
     try {
-      const result = await setVaults(updatedVaults, {
+      await setVaults(updatedVaults, {
         onProgress: ({ message }) => {
           if (message) setSaveMessage(message);
         }
       });
 
-      const action = editingIndex === null ? "thêm" : "cập nhật";
-      const syncStatus = result?.sync?.status;
-
-      if (syncStatus === "synced") {
-        onToast(
-          strength.meetsPolicy
-            ? `Đã ${action} mật khẩu và đồng bộ blockchain.`
-            : `Đã ${action} và đồng bộ, nhưng mật khẩu còn yếu. Nên đổi sớm.`,
-          strength.meetsPolicy ? "success" : "warning",
-          { duration: 5000 }
-        );
-      } else if (syncStatus === "local_fallback") {
-        onToast(result.sync.message || "Đã lưu local. Web3 sync sẽ cần thử lại sau.", "warning", { duration: 7000 });
-      } else {
-        onToast(
-          strength.meetsPolicy
-            ? `Đã ${action} mật khẩu vào vault.`
-            : `Đã ${action}, nhưng mật khẩu còn yếu. Nên đổi sớm.`,
-          strength.meetsPolicy ? "success" : "warning"
-        );
-      }
-
+      onToast("Đã lưu an toàn lên Blockchain!", "success");
       setModalOpen(false);
       setForm(emptyForm);
       setEditingIndex(null);
     } catch (error) {
-      onToast(getUserFriendlyMessage(error), "danger", { duration: 8000 });
+      const normalized = normalizeError(error);
+      if (normalized.code === ErrorCodes.USER_REJECTED) {
+        onToast("Giao dịch bị hủy", "danger");
+      } else {
+        onToast(getUserFriendlyMessage(error), "danger", { duration: 8000 });
+      }
     } finally {
       setIsSaving(false);
       setSaveMessage("Đang lưu...");
     }
   };
 
-  const remove = (index) => {
-    const deletedItem = vaultList[index];
-    setVaults((prev) => prev.filter((_, idx) => idx !== index))
-      .then(() => {
-        onToast("Đã xóa mật khẩu", "warning", {
-          action: {
-            label: "Hoàn tác",
-            onClick: () => {
-              if (!deletedItem) return;
-              setVaults((prev) => {
-                const next = [...prev];
-                next.splice(index, 0, deletedItem);
-                return next;
-              }).catch((error) => onToast(getUserFriendlyMessage(error), "danger"));
-            }
-          },
-          duration: 6000
-        });
-      })
-      .catch((error) => onToast(getUserFriendlyMessage(error), "danger", { duration: 8000 }));
+  const remove = async (index) => {
+    if (isSaving) return;
+
+    const updatedVaults = vaultList.filter((_, idx) => idx !== index);
+
+    setIsSaving(true);
+    onToast("Đang mã hóa và đẩy lên Web3...", "info", { duration: 15000 });
+
+    try {
+      await setVaults(updatedVaults);
+      onToast("Đã lưu an toàn lên Blockchain!", "success");
+    } catch (error) {
+      const normalized = normalizeError(error);
+      if (normalized.code === ErrorCodes.USER_REJECTED) {
+        onToast("Giao dịch bị hủy", "danger");
+      } else {
+        onToast(getUserFriendlyMessage(error), "danger", { duration: 8000 });
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const copyPassword = async (password) => {
@@ -415,8 +402,12 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
             userInputs={[form.url, form.username]}
             policyText="Mật khẩu lưu trong vault nên đạt mức Khá trở lên và tối thiểu 8 ký tự."
           />
-          <button className="btn-primary w-full" type="submit" disabled={isSaving}>
-            {isSaving ? `Đang lưu... (${saveSeconds}s)` : "Lưu mật khẩu"}
+          <button
+            className={`btn-primary w-full ${isSaving ? "opacity-50 cursor-not-allowed" : ""}`}
+            type="submit"
+            disabled={isSaving}
+          >
+            {isSaving ? "Đang mã hóa & đồng bộ..." : "Lưu mật khẩu"}
           </button>
         </form>
       </Modal>

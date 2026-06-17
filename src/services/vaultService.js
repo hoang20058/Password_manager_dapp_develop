@@ -7,7 +7,7 @@ import {
   generateSalt
 } from "../utils/crypto";
 import { fetchFromIPFS, uploadToIPFS } from "./ipfsService";
-import { getVaultCidFromChain, updateVaultCidOnChain } from "./blockchainService";
+import { getVaultCidFromChain, updateVaultCidOnChain, getBlockchainSigner } from "./blockchainService";
 import {
   ErrorCodes,
   VaultServiceError,
@@ -18,7 +18,6 @@ import {
   validateEthereumAddress
 } from "../utils/errorHandling";
 
-const DB_NAME = "vault-security-db";
 const DB_VERSION = 1;
 const STORE_VAULT = "vaultEncrypted";
 const STORE_META = "vaultMeta";
@@ -29,7 +28,17 @@ const META_KEY_LAST_SYNCED_CID = "lastSyncedCid";
 const META_KEY_PENDING_SYNC = "pendingSyncV1";
 const EXPORT_FORMAT = "vault-ciphertext-v1";
 
-let databasePromise = null;
+const databases = {};
+
+export async function getIdentityAddress(identity) {
+  if (!identity) return null;
+  if (identity.address) return identity.address;
+  if (identity.uid) {
+    const signer = await getBlockchainSigner("google", identity.uid);
+    return await signer.getAddress();
+  }
+  return null;
+}
 
 function ensureIndexedDbAvailable() {
   if (!globalThis.indexedDB) {
@@ -37,12 +46,16 @@ function ensureIndexedDbAvailable() {
   }
 }
 
-function openDatabase() {
+function openDatabase(userAddress) {
   ensureIndexedDbAvailable();
-  if (databasePromise) return databasePromise;
+  if (!userAddress) {
+    throw new VaultServiceError(ErrorCodes.LOCAL_SAVE_FAILED, "userAddress is required to open database");
+  }
+  const dbName = `vault-db-${userAddress.toLowerCase()}`;
+  if (databases[dbName]) return databases[dbName];
 
-  databasePromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+  databases[dbName] = new Promise((resolve, reject) => {
+    const request = indexedDB.open(dbName, DB_VERSION);
 
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -58,7 +71,7 @@ function openDatabase() {
     request.onerror = () => reject(request.error || new VaultServiceError(ErrorCodes.LOCAL_SAVE_FAILED));
   });
 
-  return databasePromise;
+  return databases[dbName];
 }
 
 function txPromise(transaction) {
@@ -127,7 +140,11 @@ function emitProgress(onProgress, stage, message, meta = {}) {
   onProgress?.({ stage, message, ...meta });
 }
 
-async function resolveOrCreateSalt(db) {
+async function resolveOrCreateSalt(db, preferredSalt = null) {
+  if (preferredSalt) {
+    await setMeta(db, META_KEY_SALT, preferredSalt);
+    return preferredSalt;
+  }
   const existingSalt = await getMeta(db, META_KEY_SALT);
   if (typeof existingSalt === "string" && existingSalt.trim()) {
     return existingSalt.trim();
@@ -165,21 +182,123 @@ function canFallbackToLocal(error) {
 }
 
 export const vaultService = {
-  async deriveVaultKeyFromPassword(password) {
-    const db = await openDatabase();
+  async checkUserRegistration(userAddress, providerType = "metamask") {
+    if (!userAddress) return false;
+    try {
+      const { cid } = await getVaultCidFromChain(userAddress, providerType);
+      return Boolean(cid && cid.trim());
+    } catch (error) {
+      console.error("checkUserRegistration error:", error);
+      return false;
+    }
+  },
+
+  async unlockAndSyncVault(password, userAddress, providerType = "metamask") {
+    const db = await openDatabase(userAddress);
+    const { cid, error: chainError } = await getVaultCidFromChain(userAddress, providerType);
+    if (chainError) {
+      throw new VaultServiceError(ErrorCodes.SYNC_FAILED, `Blockchain error: ${chainError}`);
+    }
+    if (!cid) {
+      throw new VaultServiceError(ErrorCodes.SYNC_FAILED, "Không tìm thấy dữ liệu Vault trên Blockchain cho tài khoản này.");
+    }
+
+    let payload;
+    try {
+      payload = await fetchFromIPFS(cid);
+    } catch (ipfsError) {
+      throw new VaultServiceError(
+        ErrorCodes.IPFS_FETCH_FAILED,
+        "Không thể tải dữ liệu từ IPFS. Vui lòng kiểm tra kết nối mạng.",
+        ipfsError
+      );
+    }
+
+    if (!payload || !payload.encryptedPayload || !payload.salt) {
+      throw new VaultServiceError(
+        ErrorCodes.DECRYPTION_FAILED,
+        "Dữ liệu tải từ IPFS không hợp lệ hoặc bị hỏng."
+      );
+    }
+
+    const { encryptedPayload, salt } = payload;
+    const encryptionKey = await deriveKey(password, salt, { iterations: PBKDF2_ITERATIONS });
+
+    let decrypted;
+    try {
+      decrypted = await decrypt(encryptedPayload, encryptionKey);
+    } catch (cryptoError) {
+      throw new CryptoOperationError(
+        "DECRYPT_FAILED",
+        "Master Password không chính xác.",
+        cryptoError
+      );
+    }
+
+    await resolveOrCreateSalt(db, salt);
+    await putVaultRecord(db, encryptedPayload);
+    await setMeta(db, META_KEY_LAST_SYNCED_CID, cid);
+    await setMeta(db, META_KEY_MIGRATED, true);
+    await deleteMeta(db, META_KEY_PENDING_SYNC);
+
+    return {
+      vaults: decrypted,
+      encryptionKey
+    };
+  },
+
+  async registerNewVault(password, userAddress, providerType = "metamask", uid = null) {
+    const db = await openDatabase(userAddress);
+    const salt = generateSalt();
+    await resolveOrCreateSalt(db, salt);
+
+    const encryptionKey = await deriveKey(password, salt, { iterations: PBKDF2_ITERATIONS });
+    const emptyVault = [];
+    const encryptedPayload = await encrypt(emptyVault, encryptionKey);
+
+    const ipfsPayload = {
+      encryptedPayload,
+      salt
+    };
+
+    const cid = await uploadToIPFS(ipfsPayload);
+
+    const txResult = await updateVaultCidOnChain(cid, providerType, uid);
+    if (!txResult.success) {
+      throw new VaultServiceError(
+        txResult.code || ErrorCodes.TRANSACTION_FAILED,
+        txResult.error || "Ghi CID lên Blockchain thất bại",
+        txResult.details
+      );
+    }
+
+    await putVaultRecord(db, encryptedPayload);
+    await setMeta(db, META_KEY_LAST_SYNCED_CID, cid);
+    await setMeta(db, META_KEY_MIGRATED, true);
+    await deleteMeta(db, META_KEY_PENDING_SYNC);
+
+    return {
+      vaults: emptyVault,
+      encryptionKey
+    };
+  },
+
+  async deriveVaultKeyFromPassword(password, userAddress) {
+    const db = await openDatabase(userAddress);
     const salt = await resolveOrCreateSalt(db);
     return deriveKey(String(password ?? ""), salt, { iterations: PBKDF2_ITERATIONS });
   },
 
-  async hasVaultData() {
-    const db = await openDatabase();
+  async hasVaultData(userAddress) {
+    if (!userAddress) return false;
+    const db = await openDatabase(userAddress);
     const record = await getVaultRecord(db);
     return Boolean(record?.payload);
   },
 
-  async ensureVaultStorage(encryptionKey, options = {}) {
+  async ensureVaultStorage(encryptionKey, userAddress, options = {}) {
     ensureEncryptionKey(encryptionKey);
-    const db = await openDatabase();
+    const db = await openDatabase(userAddress);
     const hasMigrated = Boolean(await getMeta(db, META_KEY_MIGRATED));
     const existingRecord = await getVaultRecord(db);
 
@@ -194,7 +313,7 @@ export const vaultService = {
       try {
         const parsed = JSON.parse(legacyRawText);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          await this.saveVaultsWithKey(parsed, encryptionKey, { skipWeb3: true });
+          await this.saveVaultsWithKey(parsed, encryptionKey, userAddress, { skipWeb3: true });
           migratedCount = parsed.length;
         }
       } catch {
@@ -203,16 +322,16 @@ export const vaultService = {
     }
 
     if (migratedCount === 0) {
-      await this.saveVaultsWithKey([], encryptionKey, { skipWeb3: true });
+      await this.saveVaultsWithKey([], encryptionKey, userAddress, { skipWeb3: true });
     }
 
     await setMeta(db, META_KEY_MIGRATED, true);
     return { migrated: migratedCount > 0, count: migratedCount };
   },
 
-  async loadVaultsWithKey(encryptionKey) {
+  async loadVaultsWithKey(encryptionKey, userAddress) {
     ensureEncryptionKey(encryptionKey);
-    const db = await openDatabase();
+    const db = await openDatabase(userAddress);
     const record = await getVaultRecord(db);
     if (!record?.payload) return [];
 
@@ -220,19 +339,23 @@ export const vaultService = {
     return normalizeVaultArray(decrypted);
   },
 
-  async saveVaultsWithKey(vaults, encryptionKey, optionsOrSkipIpfs = {}) {
+  async saveVaultsWithKey(vaults, encryptionKey, userAddress, optionsOrSkipIpfs = {}) {
     ensureEncryptionKey(encryptionKey);
 
     const options = normalizeSaveOptions(optionsOrSkipIpfs);
     const normalizedVaults = normalizeVaultArray(vaults);
-    const db = await openDatabase();
+    const db = await openDatabase(userAddress);
 
     emitProgress(options.onProgress, "encrypting", "Đang mã hóa vault...");
     const encryptedPayload = await encrypt(normalizedVaults, encryptionKey);
+    const salt = await resolveOrCreateSalt(db);
+    const ipfsPayload = {
+      encryptedPayload,
+      salt
+    };
 
     const canUseWeb3 =
       !options.skipWeb3 &&
-      Boolean(globalThis.window?.ethereum) &&
       Boolean(import.meta.env.VITE_PINATA_JWT) &&
       Boolean(import.meta.env.VITE_VAULT_CONTRACT_ADDRESS);
 
@@ -241,13 +364,13 @@ export const vaultService = {
       await persistLocalVault(db, encryptedPayload);
       return {
         vaults: normalizedVaults,
-        sync: { status: "skipped", message: "Đã lưu local. Web3 sync chưa được cấu hình hoặc MetaMask chưa sẵn sàng." }
+        sync: { status: "skipped", message: "Đã lưu local. Web3 sync chưa được cấu hình." }
       };
     }
 
     try {
       emitProgress(options.onProgress, "ipfs", "Đang upload IPFS...");
-      const cid = await retryAsync(() => uploadToIPFS(encryptedPayload), {
+      const cid = await retryAsync(() => uploadToIPFS(ipfsPayload), {
         maxRetries: 3,
         initialDelayMs: 1000,
         backoffMultiplier: 2,
@@ -255,10 +378,14 @@ export const vaultService = {
           emitProgress(options.onProgress, "retry", `Upload IPFS lỗi, đang thử lại ${attempt + 1}/${maxRetries}...`)
       });
 
-      emitProgress(options.onProgress, "chain", "Đang chờ MetaMask xác nhận giao dịch...");
+      emitProgress(options.onProgress, "chain", "Đang chờ blockchain xác nhận giao dịch...");
+      // Use explicitly passed providerType from context options
+      const providerType = optionsOrSkipIpfs.providerType || "metamask";
+
       const txResult = await retryAsync(
         async () => {
-          const result = await updateVaultCidOnChain(cid);
+          const uid = optionsOrSkipIpfs.uid || null;
+          const result = await updateVaultCidOnChain(cid, providerType, uid);
           if (!result.success) {
             throw new VaultServiceError(result.code || ErrorCodes.TRANSACTION_FAILED, result.error, result.details);
           }
@@ -319,25 +446,27 @@ export const vaultService = {
 
   async syncVaultOnLogin(encryptionKey, userAddress, options = {}) {
     ensureEncryptionKey(encryptionKey);
-    const db = await openDatabase();
+    const db = await openDatabase(userAddress);
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
 
     try {
       const validAddress = validateEthereumAddress(userAddress);
       emitProgress(onProgress, "chain", "Đang kiểm tra pointer trên blockchain...");
 
-      const { cid, error, code } = await getVaultCidFromChain(validAddress);
+      const providerType = options.providerType || "metamask";
+
+      const { cid, error, code } = await getVaultCidFromChain(validAddress, providerType);
       if (error || !cid) {
         return { synced: false, reason: error || "No CID on chain", code };
       }
 
       const localSyncedCid = await getMeta(db, META_KEY_LAST_SYNCED_CID);
       if (localSyncedCid === cid) {
-        return { synced: true, reason: "Already up-to-date", vaults: await this.loadVaultsWithKey(encryptionKey) };
+        return { synced: true, reason: "Already up-to-date", vaults: await this.loadVaultsWithKey(encryptionKey, userAddress) };
       }
 
       emitProgress(onProgress, "ipfs", "Đang tải vault mới nhất từ IPFS...");
-      const encryptedPayloadFromIpfs = await retryAsync(() => fetchFromIPFS(cid), {
+      const payloadFromIpfs = await retryAsync(() => fetchFromIPFS(cid), {
         maxRetries: 3,
         initialDelayMs: 1000,
         backoffMultiplier: 2,
@@ -345,10 +474,19 @@ export const vaultService = {
           emitProgress(onProgress, "retry", `Tải IPFS lỗi, đang thử lại ${attempt + 1}/${maxRetries}...`)
       });
 
+      if (!payloadFromIpfs || !payloadFromIpfs.encryptedPayload || !payloadFromIpfs.salt) {
+        throw new VaultServiceError(
+          ErrorCodes.DECRYPTION_FAILED,
+          "Dữ liệu tải từ IPFS không hợp lệ hoặc bị hỏng."
+        );
+      }
+
+      const { encryptedPayload, salt } = payloadFromIpfs;
+
       emitProgress(onProgress, "decrypting", "Đang giải mã dữ liệu đồng bộ...");
       let decrypted = [];
       try {
-        decrypted = await decrypt(encryptedPayloadFromIpfs, encryptionKey);
+        decrypted = await decrypt(encryptedPayload, encryptionKey);
       } catch (error) {
         throw new VaultServiceError(
           ErrorCodes.DECRYPTION_FAILED,
@@ -361,7 +499,8 @@ export const vaultService = {
         throw new VaultServiceError(ErrorCodes.DECRYPTION_FAILED, "Synced vault payload is not an array");
       }
 
-      await putVaultRecord(db, encryptedPayloadFromIpfs);
+      await resolveOrCreateSalt(db, salt);
+      await putVaultRecord(db, encryptedPayload);
       await setMeta(db, META_KEY_LAST_SYNCED_CID, cid);
       await deleteMeta(db, META_KEY_PENDING_SYNC);
 
@@ -378,12 +517,12 @@ export const vaultService = {
     }
   },
 
-  async rotateEncryptionKey(oldPassword, nextPassword) {
-    const db = await openDatabase();
+  async rotateEncryptionKey(oldPassword, nextPassword, userAddress) {
+    const db = await openDatabase(userAddress);
     const oldKey = await deriveVaultKey(oldPassword, db);
     const nextKey = await deriveVaultKey(nextPassword, db);
-    const currentVaults = await this.loadVaultsWithKey(oldKey);
-    await this.saveVaultsWithKey(currentVaults, nextKey, { skipWeb3: true });
+    const currentVaults = await this.loadVaultsWithKey(oldKey, userAddress);
+    await this.saveVaultsWithKey(currentVaults, nextKey, userAddress, { skipWeb3: true });
     return { vaults: currentVaults, encryptionKey: nextKey };
   },
 

@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { STORAGE_KEYS } from "../utils/storageKeys";
-import { createPasswordVerifier, verifyPasswordVerifier, CryptoOperationError, normalizeStoredSecret } from "../utils/crypto";
+import { CryptoOperationError } from "../utils/crypto";
 import { signInWithGoogle, signOutGoogle } from "../services/authService";
 import { connectMetaMask } from "../services/walletService";
-import { vaultService } from "../services/vaultService";
-import { getUserFriendlyMessage } from "../utils/errorHandling";
+import { vaultService, getIdentityAddress } from "../services/vaultService";
+import { getUserFriendlyMessage, ErrorCodes } from "../utils/errorHandling";
 
 const ACTIVITY_EVENTS = ["pointerdown", "keydown", "scroll", "touchstart", "mousemove"];
 
@@ -30,11 +30,11 @@ export function AppProvider({ children }) {
   const [vaults, setVaultsState] = useState([]);
   const [profile, setProfile] = useLocalStorage(STORAGE_KEYS.USER_PROFILE, defaultProfile);
   const [theme, setTheme] = useLocalStorage(STORAGE_KEYS.THEME, "dark");
-  const [masterPasswordRecord, setMasterPasswordRecord] = useState(null);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [masterGate, setMasterGate] = useState({ open: false, purpose: "", action: null });
   const [authBusy, setAuthBusy] = useState(false);
   const [hasVaultData, setHasVaultData] = useState(false);
+  const [hasMasterPassword, setHasMasterPassword] = useState(false);
   const [search, setSearch] = useLocalStorage("appSearch", "");
   const [autoLockMinutes, setAutoLockMinutes] = useLocalStorage(STORAGE_KEYS.AUTO_LOCK_MINUTES, 15);
   const [isSessionUnlocked, setSessionUnlocked] = useLocalStorage(STORAGE_KEYS.SESSION_UNLOCKED, false);
@@ -62,40 +62,18 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     const bootstrapSecrets = async () => {
-      const storedValue = localStorage.getItem(STORAGE_KEYS.MASTER_PASSWORD_HASH);
-      let nextRecord = null;
-
-      if (storedValue) {
-        try {
-          const parsed = JSON.parse(storedValue);
-          nextRecord = parsed && typeof parsed === "object" ? parsed : storedValue;
-        } catch {
-          nextRecord = storedValue;
-        }
-      } else {
-        const defaultMasterPassword = import.meta.env.VITE_DEFAULT_MASTER_PASSWORD || "";
-        const normalizedDefault = String(defaultMasterPassword ?? "").trim();
-        if (normalizedDefault) {
-          nextRecord = await createPasswordVerifier(normalizedDefault);
-          localStorage.setItem(STORAGE_KEYS.MASTER_PASSWORD_HASH, JSON.stringify(nextRecord));
-        }
-      }
-
-      setMasterPasswordRecord(nextRecord);
+      // Reset session on page refresh/startup because RAM keys are lost anyway
+      setSession(defaultSession);
       setSessionUnlocked(false);
       setVaultsState([]);
-      localStorage.removeItem(STORAGE_KEYS.MASTER_PASSWORD);
       sessionKeyRef.current = null;
-
-      const hasIndexedVaults = await vaultService.hasVaultData();
-      const legacyRawText = localStorage.getItem(STORAGE_KEYS.VAULTS);
-      const hasLegacyVaults = Boolean(legacyRawText && legacyRawText.trim());
-      setHasVaultData(hasIndexedVaults || hasLegacyVaults);
+      setHasVaultData(false);
+      setHasMasterPassword(false);
       setBootstrapped(true);
     };
 
     bootstrapSecrets();
-  }, [setSessionUnlocked]);
+  }, [setSession, setSessionUnlocked]);
 
   useEffect(() => {
     const clearSessionKey = () => {
@@ -117,6 +95,12 @@ export function AppProvider({ children }) {
       throw new Error("Phiên đang khóa. Vui lòng mở khóa trước khi thay đổi vault.");
     }
 
+    const activeIdentity = session?.wallet || session?.google;
+    const userAddress = await getIdentityAddress(activeIdentity);
+    if (!userAddress) {
+      throw new Error("Không tìm thấy thông tin định danh người dùng.");
+    }
+
     const previousVaults = vaultsRef.current;
     const computedVaults = typeof nextVaultsOrUpdater === "function"
       ? nextVaultsOrUpdater(previousVaults)
@@ -126,19 +110,24 @@ export function AppProvider({ children }) {
     setVaultsState(normalizedVaults);
 
     try {
-      const saveResult = await vaultService.saveVaultsWithKey(normalizedVaults, encryptionKey, options);
-      setHasVaultData(normalizedVaults.length > 0 || (await vaultService.hasVaultData()));
+      const saveResult = await vaultService.saveVaultsWithKey(
+        normalizedVaults,
+        encryptionKey,
+        userAddress,
+        { ...options, providerType: session?.provider, uid: session?.google?.uid }
+      );
+      setHasVaultData(normalizedVaults.length > 0 || (await vaultService.hasVaultData(userAddress)));
       return { vaults: normalizedVaults, sync: saveResult?.sync || { status: "unknown" } };
     } catch (error) {
       setVaultsState(previousVaults);
       try {
-        await vaultService.saveVaultsWithKey(previousVaults, encryptionKey, { skipWeb3: true });
+        await vaultService.saveVaultsWithKey(previousVaults, encryptionKey, userAddress, { skipWeb3: true });
       } catch {
-        // Rollback is best-effort. Surface the original error to the UI.
+        // Rollback is best-effort.
       }
       throw error;
     }
-  }, []);
+  }, [session]);
 
   const signInGoogle = useCallback(async (activateSession = true) => {
     setAuthBusy(true);
@@ -160,6 +149,8 @@ export function AppProvider({ children }) {
         email: googleUser.email || prev.email
       }));
       return nextSession;
+    } catch (error) {
+      throw error;
     } finally {
       setAuthBusy(false);
     }
@@ -200,114 +191,109 @@ export function AppProvider({ children }) {
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
   }, [setSessionUnlocked]);
 
-  const runSessionUnlock = useCallback(async (password) => {
-    if (!masterPasswordRecord) {
-      return { ok: false, message: "Bạn chưa tạo master password" };
-    }
+  const runSessionUnlock = useCallback(async (password, userAddress = null, providerType = null, googleUid = null) => {
+    const activeIdentity = session?.wallet || session?.google;
+    const targetAddress = userAddress || (await getIdentityAddress(activeIdentity));
+    const resolvedProviderType = providerType || session?.provider || "google";
+    const uid = googleUid || activeIdentity?.uid;
 
-    const isValid = await verifyPasswordVerifier(password, masterPasswordRecord);
-    if (!isValid) {
-      return { ok: false, message: "Sai mật khẩu master" };
+    if (!targetAddress) {
+      return { ok: false, message: "Không tìm thấy địa chỉ ví của bạn." };
     }
-
-    const encryptionKey = await vaultService.deriveVaultKeyFromPassword(password);
-    let migration = { migrated: false };
-    let loadedVaults = [];
 
     try {
-      migration = await vaultService.ensureVaultStorage(encryptionKey, {
-        legacyVaultRawText: localStorage.getItem(STORAGE_KEYS.VAULTS)
-      });
-      loadedVaults = await vaultService.loadVaultsWithKey(encryptionKey);
+      // Update unlockAndSyncVault call with uid parameter if needed in the future
+      const syncResult = await vaultService.unlockAndSyncVault(password, targetAddress, resolvedProviderType, uid);
+
+      sessionKeyRef.current = syncResult.encryptionKey;
+      setVaultsState(syncResult.vaults);
+      setSessionUnlocked(true);
+      setHasVaultData(syncResult.vaults.length > 0 || (await vaultService.hasVaultData(targetAddress)));
+      setHasMasterPassword(true);
+
+      return { ok: true };
     } catch (error) {
-      const canTryLegacyCipherFallback =
-        error instanceof CryptoOperationError && error.code === "DECRYPT_FAILED";
-
-      if (!canTryLegacyCipherFallback) throw error;
-
-      const legacyRaw = typeof masterPasswordRecord === "string"
-        ? normalizeStoredSecret(masterPasswordRecord)
-        : normalizeStoredSecret(masterPasswordRecord?.legacyHash);
-
-      if (!legacyRaw) throw error;
-
-      const legacyKey = await vaultService.deriveVaultKeyFromPassword(legacyRaw);
-      loadedVaults = await vaultService.loadVaultsWithKey(legacyKey);
-      await vaultService.saveVaultsWithKey(loadedVaults, encryptionKey, { skipWeb3: true });
-      migration = { migrated: true };
+      let message = "Sai mật khẩu master";
+      if (error instanceof CryptoOperationError && error.code === "DECRYPT_FAILED") {
+        message = "Sai mật khẩu master";
+      } else if (error.code === ErrorCodes.IPFS_FETCH_FAILED || error.code === ErrorCodes.SYNC_FAILED) {
+        message = error.message || "Không thể tải dữ liệu từ Web3/IPFS. Vui lòng kiểm tra lại.";
+      } else {
+        message = getUserFriendlyMessage(error) || "Không thể mở khóa phiên. Vui lòng thử lại.";
+      }
+      return { ok: false, message };
     }
-
-    sessionKeyRef.current = encryptionKey;
-    setVaultsState(loadedVaults);
-    setSessionUnlocked(true);
-
-    if (!masterPasswordRecord?.algorithm) {
-      const upgradedRecord = await createPasswordVerifier(password);
-      setMasterPasswordRecord(upgradedRecord);
-      localStorage.setItem(STORAGE_KEYS.MASTER_PASSWORD_HASH, JSON.stringify(upgradedRecord));
-    }
-
-    if (migration.migrated) {
-      localStorage.removeItem(STORAGE_KEYS.VAULTS);
-    }
-    setHasVaultData(loadedVaults.length > 0 || (await vaultService.hasVaultData()));
-
-    return { ok: true };
-  }, [masterPasswordRecord, setSessionUnlocked]);
+  }, [session]);
 
   const updateMasterPassword = useCallback(async (currentPassword, nextPassword) => {
-    if (!masterPasswordRecord) {
-      return { ok: false, message: "Bạn chưa tạo master password" };
-    }
-
-    if (!(await verifyPasswordVerifier(currentPassword, masterPasswordRecord))) {
-      return { ok: false, message: "Sai mật khẩu master" };
+    const activeIdentity = session?.wallet || session?.google;
+    const userAddress = await getIdentityAddress(activeIdentity);
+    if (!userAddress) {
+      return { ok: false, message: "Không tìm thấy phiên đăng nhập để đổi mật khẩu" };
     }
 
     try {
-      const rotation = await vaultService.rotateEncryptionKey(currentPassword, nextPassword);
-      const nextRecord = await createPasswordVerifier(nextPassword);
+      const rotation = await vaultService.rotateEncryptionKey(currentPassword, nextPassword, userAddress);
 
       sessionKeyRef.current = rotation.encryptionKey;
       setVaultsState(rotation.vaults);
-      setMasterPasswordRecord(nextRecord);
-      localStorage.setItem(STORAGE_KEYS.MASTER_PASSWORD_HASH, JSON.stringify(nextRecord));
       setSessionUnlocked(true);
-      setHasVaultData(rotation.vaults.length > 0 || (await vaultService.hasVaultData()));
+
+      await vaultService.saveVaultsWithKey(
+        rotation.vaults,
+        rotation.encryptionKey,
+        userAddress,
+        { providerType: session?.provider, uid: session?.google?.uid }
+      );
+      setHasVaultData(rotation.vaults.length > 0 || (await vaultService.hasVaultData(userAddress)));
 
       return { ok: true };
     } catch (error) {
       return { ok: false, message: getUserFriendlyMessage(error) || "Không thể đổi master password" };
     }
-  }, [masterPasswordRecord, setSessionUnlocked]);
+  }, [session]);
 
-  const createMasterPassword = useCallback(async (nextPassword) => {
-    const nextRecord = await createPasswordVerifier(nextPassword);
-    const encryptionKey = await vaultService.deriveVaultKeyFromPassword(nextPassword);
-    const migration = await vaultService.ensureVaultStorage(encryptionKey, {
-      legacyVaultRawText: localStorage.getItem(STORAGE_KEYS.VAULTS)
-    });
-    const loadedVaults = await vaultService.loadVaultsWithKey(encryptionKey);
+  const createMasterPassword = useCallback(async (nextPassword, userAddress = null, providerType = null, googleUid = null) => {
+    const activeIdentity = session?.wallet || session?.google;
+    const targetAddress = userAddress || (await getIdentityAddress(activeIdentity));
+    const resolvedProviderType = providerType || session?.provider || "google";
+    const uid = googleUid || activeIdentity?.uid;
 
-    sessionKeyRef.current = encryptionKey;
-    setMasterPasswordRecord(nextRecord);
-    setVaultsState(loadedVaults);
-    setSessionUnlocked(true);
-    setHasVaultData(loadedVaults.length > 0 || (await vaultService.hasVaultData()));
-    localStorage.setItem(STORAGE_KEYS.MASTER_PASSWORD_HASH, JSON.stringify(nextRecord));
-    localStorage.removeItem(STORAGE_KEYS.MASTER_PASSWORD);
-
-    if (migration.migrated) {
-      localStorage.removeItem(STORAGE_KEYS.VAULTS);
+    if (!targetAddress) {
+      return { ok: false, message: "Không tìm thấy địa chỉ ví của bạn." };
     }
 
-    return { ok: true };
-  }, [setSessionUnlocked]);
+    try {
+      const registerResult = await vaultService.registerNewVault(nextPassword, targetAddress, resolvedProviderType, uid);
+
+      sessionKeyRef.current = registerResult.encryptionKey;
+      setVaultsState(registerResult.vaults);
+      setSessionUnlocked(true);
+      setHasVaultData(false);
+      setHasMasterPassword(true);
+
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        message: getUserFriendlyMessage(error) || "Không thể đăng ký Master Password lên Blockchain"
+      };
+    }
+  }, [session]);
 
   const verifyMasterPassword = useCallback(async (password) => {
-    if (!masterPasswordRecord) return false;
-    return verifyPasswordVerifier(password, masterPasswordRecord);
-  }, [masterPasswordRecord]);
+    const activeIdentity = session?.wallet || session?.google;
+    const userAddress = await getIdentityAddress(activeIdentity);
+    if (!userAddress) return false;
+
+    try {
+      const derived = await vaultService.deriveVaultKeyFromPassword(password, userAddress);
+      const loaded = await vaultService.loadVaultsWithKey(derived, userAddress);
+      return Array.isArray(loaded);
+    } catch {
+      return false;
+    }
+  }, [session]);
 
   const requestMasterAction = useCallback((purpose, action, options = {}) => {
     const { forceReauth = false } = options;
@@ -413,20 +399,24 @@ export function AppProvider({ children }) {
   }, [isSessionUnlocked, resetAutoLockTimer, session?.isAuthenticated]);
 
   const syncVaultOnLoginIfNeeded = useCallback(async (userAddress, options = {}) => {
-    if (!globalThis.window?.ethereum || !sessionKeyRef.current || !userAddress) {
-      return { synced: false, reason: "Không có ví hoặc phiên chưa được mở khóa." };
+    if (!sessionKeyRef.current || !userAddress) {
+      return { synced: false, reason: "Phiên chưa được mở khóa." };
     }
 
     try {
       const encryptionKey = sessionKeyRef.current;
-      const syncResult = await vaultService.syncVaultOnLogin(encryptionKey, userAddress, options);
+      const syncResult = await vaultService.syncVaultOnLogin(
+        encryptionKey,
+        userAddress,
+        { ...options, providerType: session?.provider }
+      );
 
       if (syncResult.synced) {
         const updatedVaults = Array.isArray(syncResult.vaults)
           ? syncResult.vaults
-          : await vaultService.loadVaultsWithKey(encryptionKey);
+          : await vaultService.loadVaultsWithKey(encryptionKey, userAddress);
         setVaultsState(updatedVaults);
-        setHasVaultData(updatedVaults.length > 0 || (await vaultService.hasVaultData()));
+        setHasVaultData(updatedVaults.length > 0 || (await vaultService.hasVaultData(userAddress)));
         return { synced: true, reason: syncResult.reason, count: updatedVaults.length };
       }
 
@@ -458,7 +448,7 @@ export function AppProvider({ children }) {
     autoLockMinutes,
     setAutoLockMinutes,
     bootstrapped,
-    hasMasterPassword: Boolean(masterPasswordRecord),
+    hasMasterPassword,
     hasVaultData,
     isSessionUnlocked,
     setSessionUnlocked,
@@ -482,7 +472,8 @@ export function AppProvider({ children }) {
     exportVaultData,
     importVaultData,
     unlockWithMasterPassword: runSessionUnlock,
-    syncVaultOnLoginIfNeeded
+    syncVaultOnLoginIfNeeded,
+    encryptionKey: sessionKeyRef.current
   }), [
     session,
     setSession,
@@ -497,7 +488,7 @@ export function AppProvider({ children }) {
     autoLockMinutes,
     setAutoLockMinutes,
     bootstrapped,
-    masterPasswordRecord,
+    hasMasterPassword,
     hasVaultData,
     isSessionUnlocked,
     setSessionUnlocked,
@@ -521,7 +512,8 @@ export function AppProvider({ children }) {
     exportVaultData,
     importVaultData,
     runSessionUnlock,
-    syncVaultOnLoginIfNeeded
+    syncVaultOnLoginIfNeeded,
+    sessionKeyRef.current
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
