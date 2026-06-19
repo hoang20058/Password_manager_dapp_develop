@@ -8,7 +8,7 @@ import { Download, Upload, Trash2, ShieldAlert } from "lucide-react";
 export default function ImportExportPage() {
   const { importVaultData, requestMasterAction, clearAllVaultData, exportVaultData, notify } = useApp();
   const fileRef = useRef(null);
-  
+
   // Import states
   const [preview, setPreview] = useState(null);
   const [summary, setSummary] = useState(null);
@@ -107,9 +107,9 @@ export default function ImportExportPage() {
           </div>
 
           <div className="flex flex-col gap-4">
-            <button 
+            <button
               className="btn-primary w-full h-12 flex items-center justify-center gap-2"
-              type="button" 
+              type="button"
               onClick={() => fileRef.current?.click()}
             >
               <Upload className="h-5 w-5" />
@@ -182,7 +182,7 @@ export default function ImportExportPage() {
               <Download className="h-5 w-5" />
               Xuất file JSON mã hóa
             </button>
-            
+
             <p className="text-xs text-app-muted leading-relaxed">
               * Tệp xuất chứa toàn bộ thông tin đăng nhập được mã hóa an toàn. Bạn có thể khôi phục lại bất kỳ lúc nào bằng cách sử dụng chức năng Nhập dữ liệu với cùng Master Password hiện tại.
             </p>
