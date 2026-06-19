@@ -529,9 +529,6 @@ export default function AuthPage() {
                         onChange={(e) => setPhone(e.target.value)}
                       />
                     </div>
-                    <p className="text-[11px] leading-relaxed text-app-muted mt-2">
-                      Thông tin này chỉ lưu trữ mã hóa trong két sắt cá nhân của bạn trên client-side nhằm giúp hệ thống cảnh báo nếu Master Password của bạn quá dễ đoán. Hệ thống không lưu trữ plaintext.
-                    </p>
                   </div>
                 )}
               </div>

@@ -320,14 +320,6 @@ export default function SecurityPage() {
                   Được mã hóa đầu-cuối bằng Master Password của bạn và lưu trữ phi tập trung an toàn trên Web3/IPFS.
                 </p>
               </div>
-
-              <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 flex gap-3 text-xs text-blue-400">
-                <Info className="h-4.5 w-4.5 shrink-0 mt-0.5" />
-                <p className="leading-relaxed">
-                  Thông tin cá nhân này chỉ dùng cục bộ trong trình duyệt để phân tích, giúp bạn phát hiện xem Master Password có chứa thông tin dễ đoán trùng với họ tên, ngày sinh hay số điện thoại hay không. Dữ liệu thô tuyệt đối không bao giờ được lưu trữ hay gửi đi dưới dạng plaintext.
-                </p>
-              </div>
-
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Họ và tên đầy đủ</span>

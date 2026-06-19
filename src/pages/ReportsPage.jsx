@@ -341,20 +341,6 @@ export default function ReportsPage() {
             Đối chiếu mật khẩu của bạn với cơ sở dữ liệu các vụ rò rỉ thông tin công khai đã biết.
           </p>
         </div>
-
-        {/* Privacy principles & zero-knowledge disclosure */}
-        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 flex gap-3 text-sm text-blue-500 dark:text-blue-400">
-          <ShieldCheck className="h-5 w-5 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-semibold text-blue-400">Cam kết bảo mật Zero-Knowledge</p>
-            <p className="text-xs text-app-muted leading-relaxed">
-              Chúng tôi sử dụng thuật toán <strong>K-Anonymity</strong> để đảm bảo mật khẩu gốc của bạn KHÔNG bao giờ bị gửi đi. 
-              Mật khẩu được băm SHA-1 cục bộ, ứng dụng chỉ gửi 5 ký tự đầu (Prefix) của mã băm lên API Have I Been Pwned. 
-              API trả về danh sách các hậu tố trùng khớp, và việc so khớp hậu tố hoàn chỉnh được thực hiện an toàn ngay trên RAM của bạn.
-            </p>
-          </div>
-        </div>
-
         {/* IDLE State */}
         {scanState === "idle" && (
           <div className="flex flex-col items-center justify-center py-6 text-center">
