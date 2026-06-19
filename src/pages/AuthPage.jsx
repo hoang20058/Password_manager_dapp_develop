@@ -108,7 +108,7 @@ export default function AuthPage() {
 
   const handleLoginWithProvider = async (providerType) => {
     setError("");
-    
+
     // For MetaMask or if Google is already connected, require master password
     const isGoogleConnected = providerType === "google" && identity && identity.provider === "google";
     if ((providerType === "metamask" || isGoogleConnected) && !loginMaster) {
@@ -201,7 +201,7 @@ export default function AuthPage() {
     setError("");
 
     const isGoogleConnected = providerType === "google" && identity && identity.provider === "google";
-    
+
     if (isGoogleConnected || providerType === "metamask") {
       if (!registerMaster) {
         return setError("Vui lòng nhập Master Password mới");
@@ -338,9 +338,8 @@ export default function AuthPage() {
         <section className="space-y-6 p-6 sm:p-8 lg:p-10">
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-app-surface-alt p-1">
             <button
-              className={`rounded-lg px-3 py-2 text-sm font-semibold transition-all duration-200 ease-premium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus ${
-                tab === "login" ? "bg-app-surface text-app-text shadow-sm" : "text-app-muted hover:text-app-text"
-              }`}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition-all duration-200 ease-premium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus ${tab === "login" ? "bg-app-surface text-app-text shadow-sm" : "text-app-muted hover:text-app-text"
+                }`}
               type="button"
               onClick={() => handleTabChange("login")}
               disabled={isSyncing}
@@ -348,9 +347,8 @@ export default function AuthPage() {
               Đăng nhập
             </button>
             <button
-              className={`rounded-lg px-3 py-2 text-sm font-semibold transition-all duration-200 ease-premium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus ${
-                tab === "register" ? "bg-app-surface text-app-text shadow-sm" : "text-app-muted hover:text-app-text"
-              }`}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition-all duration-200 ease-premium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus ${tab === "register" ? "bg-app-surface text-app-text shadow-sm" : "text-app-muted hover:text-app-text"
+                }`}
               type="button"
               onClick={() => handleTabChange("register")}
               disabled={isSyncing}
@@ -496,7 +494,7 @@ export default function AuthPage() {
                     {showSecurityProfile ? "Thu gọn ▲" : "Mở rộng ▼"}
                   </span>
                 </button>
-                
+
                 {showSecurityProfile && (
                   <div className="space-y-3 pt-2 border-t border-app-border/60 transition-all duration-300">
                     <div className="space-y-1.5">
