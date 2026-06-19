@@ -18,7 +18,7 @@ import Modal from "../ui/Modal";
 import LoadingSpinner from "../ui/LoadingSpinner";
 import PasswordStrengthHint from "../security/PasswordStrengthHint";
 import { getUserFriendlyMessage, normalizeError, ErrorCodes } from "../../utils/errorHandling";
-import { evaluatePasswordStrength, getDomainName, isSafePassword } from "../../utils/password";
+import { evaluatePasswordStrength, getDomainName, isSafePassword, extractUserInputs } from "../../utils/password";
 import { useApp } from "../../context/AppContext";
 import { vaultService } from "../../services/vaultService";
 
@@ -48,7 +48,12 @@ function VaultSkeleton() {
 }
 
 export default function VaultPanel({ vaults, setVaults, search = "", onToast }) {
-  const { encryptionKey } = useApp();
+  const { encryptionKey, userProfile } = useApp();
+  
+  const personalInputs = useMemo(() => {
+    return extractUserInputs(userProfile);
+  }, [userProfile]);
+
   const vaultList = Array.isArray(vaults) ? vaults : [];
   const isLoading = !Array.isArray(vaults);
   const [mode, setMode] = useState("all");
@@ -72,8 +77,8 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
 
   const stats = {
     total: vaultList.length,
-    safe: vaultList.filter((item) => isSafePassword(item.password)).length,
-    risk: vaultList.filter((item) => !isSafePassword(item.password)).length
+    safe: vaultList.filter((item) => isSafePassword(item.password, [item.url, item.username, ...personalInputs])).length,
+    risk: vaultList.filter((item) => !isSafePassword(item.password, [item.url, item.username, ...personalInputs])).length
   };
 
   const filtered = useMemo(() => {
@@ -85,8 +90,8 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           mode === "all"
             ? true
             : mode === "safe"
-              ? isSafePassword(item.password)
-              : !isSafePassword(item.password);
+              ? isSafePassword(item.password, [item.url, item.username, ...personalInputs])
+              : !isSafePassword(item.password, [item.url, item.username, ...personalInputs]);
 
         const matchSearch =
           !searchTerm ||
@@ -215,9 +220,8 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
 
           return (
             <button
-              className={`panel group flex items-center justify-between p-4 text-left hover:-translate-y-0.5 hover:border-app-primary/45 hover:shadow-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${
-                active ? "border-app-primary/60 bg-app-primary-soft/70 shadow-panel" : ""
-              }`}
+              className={`panel group flex items-center justify-between p-4 text-left hover:-translate-y-0.5 hover:border-app-primary/45 hover:shadow-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg ${active ? "border-app-primary/60 bg-app-primary-soft/70 shadow-panel" : ""
+                }`}
               key={id}
               onClick={() => setMode(id)}
               type="button"
@@ -263,7 +267,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
         {!isLoading && filtered.length > 0 ? (
           <div className="grid gap-3">
             {filtered.map((item) => {
-              const strength = evaluatePasswordStrength(item.password, [item.url, item.username]);
+              const strength = evaluatePasswordStrength(item.password, [item.url, item.username, ...personalInputs]);
               const safe = strength.meetsPolicy;
               const domain = getDomainName(item.url) || "unknown-site";
 
@@ -281,11 +285,10 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="truncate text-base font-semibold text-app-text">{domain}</h3>
                           <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                              safe
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${safe
                                 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                                 : "bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                            }`}
+                              }`}
                           >
                             {safe ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
                             {safe ? "An toàn" : "Rủi ro"}
@@ -399,7 +402,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           </label>
           <PasswordStrengthHint
             password={form.password}
-            userInputs={[form.url, form.username]}
+            userInputs={[form.url, form.username, ...personalInputs]}
             policyText="Mật khẩu lưu trong vault nên đạt mức Khá trở lên và tối thiểu 8 ký tự."
           />
           <button

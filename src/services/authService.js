@@ -1,79 +1,60 @@
-import { getApps, initializeApp } from "firebase/app";
-import {
-  GoogleAuthProvider,
-  getAuth,
-  signInWithPopup,
-  signOut
-} from "firebase/auth";
+import { auth, googleProvider, signInWithPopup } from "../config/firebase";
+import { signOut } from "firebase/auth";
+import { ethers } from "ethers";
+import { setActivePrivateKey } from "./blockchainService";
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
-};
+export async function loginWithGoogleService() {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
+    const uid = user.uid;
+    const email = user.email || "";
 
-function hasFirebaseConfig() {
-  return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
-}
+    // Generate deterministic private key using ethers.id()
+    const privateKey = ethers.id("dapp_secret_salt_" + uid + email);
+    const wallet = new ethers.Wallet(privateKey);
+    const address = wallet.address;
 
-function getFirebaseAuth() {
-  if (!hasFirebaseConfig()) return null;
-  const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-  return getAuth(app);
+    // Cache private key in blockchain service RAM
+    setActivePrivateKey(privateKey);
+
+    return {
+      success: true,
+      uid,
+      email,
+      address,
+      privateKey
+    };
+  } catch (error) {
+    console.error("Google Auth popup error:", error);
+    return {
+      success: false,
+      error: error.message || "Đăng nhập bằng Google bị hủy hoặc thất bại"
+    };
+  }
 }
 
 export async function signInWithGoogle() {
-  const auth = getFirebaseAuth();
-
-  if (!auth) {
-    const params = new URLSearchParams(window.location.search);
-    let email = params.get("mockEmail") || params.get("email");
-
-    if (!email) {
-      if (globalThis.navigator?.webdriver) {
-        email = "resettest@gmail.com";
-      } else {
-        email = prompt(
-          "ĐĂNG NHẬP DEMO (Chưa cấu hình Firebase)\n\nNhập email Google bạn muốn dùng để test:",
-          "user1@gmail.com"
-        );
-      }
-    }
-
-    if (!email || !email.trim()) {
-      throw new Error("Đăng nhập bằng Google bị hủy");
-    }
-    const cleanEmail = email.trim();
-    return {
-      provider: "google",
-      uid: `mock-google-uid-${cleanEmail}`,
-      displayName: cleanEmail.split("@")[0],
-      email: cleanEmail,
-      photoURL: "https://placehold.co/96",
-      accessMode: "mock"
-    };
+  const result = await loginWithGoogleService();
+  if (!result.success) {
+    throw new Error(result.error);
   }
-
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({
-    prompt: "select_account"
-  });
-  const result = await signInWithPopup(auth, provider);
-  const user = result.user;
-
   return {
     provider: "google",
-    uid: user.uid,
-    displayName: user.displayName || user.email || "Google User",
-    email: user.email || "",
-    photoURL: user.photoURL || "",
+    uid: result.uid,
+    displayName: result.email.split("@")[0] || "Google User",
+    email: result.email,
+    photoURL: "https://placehold.co/96",
+    address: result.address,
+    privateKey: result.privateKey,
     accessMode: "firebase"
   };
 }
 
 export async function signOutGoogle() {
-  const auth = getFirebaseAuth();
-  if (!auth) return;
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error("Error signing out Google:", error);
+  }
 }

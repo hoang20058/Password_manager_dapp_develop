@@ -2,16 +2,21 @@ import { useMemo, useState } from "react";
 import { useApp } from "../context/AppContext";
 import PageHeader from "../components/shared/PageHeader";
 import PasswordStrengthHint from "../components/security/PasswordStrengthHint";
-import { evaluatePasswordStrength } from "../utils/password";
+import { evaluatePasswordStrength, extractUserInputs } from "../utils/password";
 
 export default function SecurityPage() {
-  const { updateMasterPassword, autoLockMinutes, setAutoLockMinutes } = useApp();
+  const { updateMasterPassword, autoLockMinutes, setAutoLockMinutes, userProfile } = useApp();
   const [masterForm, setMasterForm] = useState({ current: "", next: "", confirm: "" });
   const [message, setMessage] = useState("");
 
+  const personalInputs = useMemo(
+    () => extractUserInputs(userProfile),
+    [userProfile]
+  );
+
   const masterStrength = useMemo(
-    () => evaluatePasswordStrength(masterForm.next, []),
-    [masterForm.next]
+    () => evaluatePasswordStrength(masterForm.next, personalInputs),
+    [masterForm.next, personalInputs]
   );
   const submitMaster = async (event) => {
     event.preventDefault();
@@ -54,7 +59,7 @@ export default function SecurityPage() {
           <h3 className="text-lg font-semibold">Đổi master password</h3>
           <input className="field" type="password" placeholder="Mật khẩu hiện tại" value={masterForm.current} onChange={(event) => setMasterForm((prev) => ({ ...prev, current: event.target.value }))} />
           <input className="field" type="password" placeholder="Mật khẩu mới" value={masterForm.next} onChange={(event) => setMasterForm((prev) => ({ ...prev, next: event.target.value }))} />
-          <PasswordStrengthHint password={masterForm.next} policyText="Master password phải đạt mức Khá trở lên và tối thiểu 8 ký tự." />
+          <PasswordStrengthHint password={masterForm.next} userInputs={personalInputs} policyText="Master password phải đạt mức Khá trở lên và tối thiểu 8 ký tự." />
           <input className="field" type="password" placeholder="Xác nhận mật khẩu" value={masterForm.confirm} onChange={(event) => setMasterForm((prev) => ({ ...prev, confirm: event.target.value }))} />
           <button className="btn-primary" type="submit" disabled={!masterStrength.meetsPolicy}>Lưu</button>
         </form>

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Link2, Shield, Wallet } from "lucide-react";
 import { useApp } from "../context/AppContext";
-import { evaluatePasswordStrength } from "../utils/password";
+import { evaluatePasswordStrength, extractUserInputs, containsPersonalInfo } from "../utils/password";
 import { getIdentityAddress, vaultService } from "../services/vaultService";
 import PasswordStrengthHint from "../components/security/PasswordStrengthHint";
 import LoadingSpinner from "../components/ui/LoadingSpinner";
+import { loginWithGoogleService } from "../services/authService";
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -32,14 +33,25 @@ export default function AuthPage() {
   const [resetConfirmed, setResetConfirmed] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // States for security optimization profile
+  const [showSecurityProfile, setShowSecurityProfile] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [dob, setDob] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const personalInputs = useMemo(() => {
+    return extractUserInputs({ fullName, dob, phone });
+  }, [fullName, dob, phone]);
+
   const registerStrength = useMemo(
     () =>
       evaluatePasswordStrength(registerMaster, [
         identity?.email || "",
         identity?.displayName || "",
-        userAddress || ""
+        userAddress || "",
+        ...personalInputs
       ]),
-    [identity?.displayName, identity?.email, userAddress, registerMaster]
+    [identity?.displayName, identity?.email, userAddress, registerMaster, personalInputs]
   );
 
   const applyIdentityToProfile = (selectedIdentity, resolvedAddress) => {
@@ -90,33 +102,81 @@ export default function AuthPage() {
     setResetConfirmed(false);
   };
 
+  const checkRegistrationOnChain = async (addr, providerType = "google") => {
+    return await vaultService.checkUserRegistration(addr, providerType);
+  };
+
   const handleLoginWithProvider = async (providerType) => {
-    if (!loginMaster) return setError("Vui lòng nhập master password");
     setError("");
+    
+    // For MetaMask or if Google is already connected, require master password
+    const isGoogleConnected = providerType === "google" && identity && identity.provider === "google";
+    if ((providerType === "metamask" || isGoogleConnected) && !loginMaster) {
+      return setError("Vui lòng nhập master password");
+    }
+
     setIsSyncing(true);
     setSyncNotice(`Đang kết nối danh tính bằng ${providerType === "google" ? "Google" : "MetaMask"}...`);
 
     try {
-      let identityResult;
+      let identityResult = null;
+      let addr = "";
+
       if (providerType === "google") {
-        identityResult = await signInGoogle(false);
+        if (isGoogleConnected) {
+          identityResult = identity;
+          addr = userAddress;
+        } else {
+          const result = await loginWithGoogleService();
+          if (!result.success) {
+            setError(result.error);
+            return;
+          }
+          identityResult = {
+            provider: "google",
+            uid: result.uid,
+            displayName: result.email.split("@")[0] || "Google User",
+            email: result.email,
+            photoURL: "https://placehold.co/96",
+            address: result.address,
+            privateKey: result.privateKey,
+            accessMode: "firebase"
+          };
+          setIdentity(identityResult);
+          addr = result.address;
+          setUserAddress(addr);
+
+          setSession((prev) => ({
+            ...prev,
+            provider: "google",
+            google: identityResult
+          }));
+        }
       } else {
         identityResult = await connectWallet(false);
+        setIdentity(identityResult);
+        addr = await getIdentityAddress(identityResult);
+        setUserAddress(addr);
       }
 
-      setIdentity(identityResult);
-      const addr = await getIdentityAddress(identityResult);
-      setUserAddress(addr);
-
       setSyncNotice("Đang kiểm tra trạng thái tài khoản từ Web3...");
-      const registered = await vaultService.checkUserRegistration(addr, providerType);
+      const registered = await checkRegistrationOnChain(addr, providerType);
       setIsRegistered(registered);
 
       if (!registered) {
         setTab("register");
-        setRegisterMaster(loginMaster);
-        setRegisterConfirm(loginMaster);
-        setError("Tài khoản chưa có Master Password. Đã tự động chuyển sang tab Đăng ký với mật khẩu bạn nhập.");
+        if (loginMaster) {
+          setRegisterMaster(loginMaster);
+          setRegisterConfirm(loginMaster);
+          setError("Tài khoản chưa có Master Password. Đã tự động chuyển sang tab Đăng ký với mật khẩu bạn nhập.");
+        } else {
+          setError("Tài khoản chưa được đăng ký. Hãy tạo Master Password mới bên dưới.");
+        }
+        return;
+      }
+
+      if (!loginMaster) {
+        setError("Đã kết nối Google. Vui lòng nhập Master Password để mở khóa két sắt.");
         return;
       }
 
@@ -138,32 +198,71 @@ export default function AuthPage() {
   };
 
   const handleRegisterWithProvider = async (providerType) => {
-    if (!registerStrength.meetsPolicy) {
-      return setError("Master password chưa đủ mạnh. Hãy tăng độ dài và độ phức tạp.");
-    }
-    if (registerMaster !== registerConfirm) return setError("Xác nhận master password không khớp");
-    if (isRegistered && !resetConfirmed) {
-      return setError("Tài khoản ví này đã được đăng ký. Vui lòng xác nhận đồng ý xóa dữ liệu cũ để Reset.");
+    setError("");
+
+    const isGoogleConnected = providerType === "google" && identity && identity.provider === "google";
+    
+    if (isGoogleConnected || providerType === "metamask") {
+      if (!registerMaster) {
+        return setError("Vui lòng nhập Master Password mới");
+      }
+      if (!registerStrength.meetsPolicy) {
+        return setError("Master password chưa đủ mạnh. Hãy tăng độ dài và độ phức tạp.");
+      }
+      if (registerMaster !== registerConfirm) {
+        return setError("Xác nhận master password không khớp");
+      }
+      if (isRegistered && !resetConfirmed) {
+        return setError("Tài khoản ví này đã được đăng ký. Vui lòng xác nhận đồng ý xóa dữ liệu cũ để Reset.");
+      }
     }
 
-    setError("");
     setIsSyncing(true);
     setSyncNotice(`Đang kết nối danh tính bằng ${providerType === "google" ? "Google" : "MetaMask"}...`);
 
     try {
-      let identityResult;
+      let identityResult = null;
+      let addr = "";
+
       if (providerType === "google") {
-        identityResult = await signInGoogle(false);
+        if (isGoogleConnected) {
+          identityResult = identity;
+          addr = userAddress;
+        } else {
+          const result = await loginWithGoogleService();
+          if (!result.success) {
+            setError(result.error);
+            return;
+          }
+          identityResult = {
+            provider: "google",
+            uid: result.uid,
+            displayName: result.email.split("@")[0] || "Google User",
+            email: result.email,
+            photoURL: "https://placehold.co/96",
+            address: result.address,
+            privateKey: result.privateKey,
+            accessMode: "firebase"
+          };
+          setIdentity(identityResult);
+          addr = result.address;
+          setUserAddress(addr);
+
+          setSession((prev) => ({
+            ...prev,
+            provider: "google",
+            google: identityResult
+          }));
+        }
       } else {
         identityResult = await connectWallet(false);
+        setIdentity(identityResult);
+        addr = await getIdentityAddress(identityResult);
+        setUserAddress(addr);
       }
 
-      setIdentity(identityResult);
-      const addr = await getIdentityAddress(identityResult);
-      setUserAddress(addr);
-
       setSyncNotice("Đang kiểm tra trạng thái tài khoản từ Web3...");
-      const registered = await vaultService.checkUserRegistration(addr, providerType);
+      const registered = await checkRegistrationOnChain(addr, providerType);
       setIsRegistered(registered);
 
       if (registered && !resetConfirmed) {
@@ -171,8 +270,21 @@ export default function AuthPage() {
         return;
       }
 
+      if (!registerMaster) {
+        setError("Đã kết nối Google. Vui lòng nhập Master Password để hoàn tất đăng ký.");
+        return;
+      }
+      if (!registerStrength.meetsPolicy) {
+        setError("Master password chưa đủ mạnh. Hãy tăng độ dài và độ phức tạp.");
+        return;
+      }
+      if (registerMaster !== registerConfirm) {
+        setError("Xác nhận master password không khớp");
+        return;
+      }
+
       setSyncNotice("Đang tạo dữ liệu mới, upload IPFS và ghi pointer lên blockchain...");
-      const result = await createMasterPassword(registerMaster, addr, providerType, identityResult?.uid);
+      const result = await createMasterPassword(registerMaster, addr, providerType, identityResult?.uid, { fullName, dob, phone });
       if (!result.ok) {
         const errorMsg = result.message?.toLowerCase() || "";
         if (errorMsg.includes("insufficient") || errorMsg.includes("gas")) {
@@ -296,7 +408,7 @@ export default function AuthPage() {
                   className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-app-border bg-app-surface p-3 text-left shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-app-primary/40 hover:shadow-card active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus disabled:pointer-events-none disabled:opacity-50"
                   type="button"
                   onClick={() => handleLoginWithProvider("google")}
-                  disabled={authBusy || isSyncing || !loginMaster}
+                  disabled={authBusy || isSyncing}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-bold text-[#4285f4] shadow-sm">
@@ -358,9 +470,73 @@ export default function AuthPage() {
 
               <PasswordStrengthHint
                 password={registerMaster}
-                userInputs={[identity?.email || "", identity?.displayName || ""]}
+                userInputs={[
+                  identity?.email || "",
+                  identity?.displayName || "",
+                  ...personalInputs
+                ]}
                 policyText="Mật khẩu master phải đạt mức Khá trở lên và tối thiểu 8 ký tự."
               />
+
+              {registerMaster && containsPersonalInfo(registerMaster, personalInputs) && (
+                <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-sm text-rose-600 dark:text-rose-200">
+                  Mật khẩu chứa thông tin cá nhân của bạn (Tên/Ngày sinh/SĐT), vui lòng chọn mật khẩu khác!
+                </div>
+              )}
+
+              {/* Optional Personal Info Section */}
+              <div className="rounded-2xl border border-app-border bg-app-surface-alt/40 p-4 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSecurityProfile(!showSecurityProfile)}
+                  className="flex w-full items-center justify-between font-semibold text-sm text-app-text hover:text-app-primary transition-colors focus:outline-none"
+                >
+                  <span>Thông tin tối ưu hóa bảo mật mật khẩu (Tùy chọn)</span>
+                  <span className="text-xs text-app-muted">
+                    {showSecurityProfile ? "Thu gọn ▲" : "Mở rộng ▼"}
+                  </span>
+                </button>
+                
+                {showSecurityProfile && (
+                  <div className="space-y-3 pt-2 border-t border-app-border/60 transition-all duration-300">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-app-muted block">Họ và tên</label>
+                      <input
+                        className="field text-sm"
+                        type="text"
+                        placeholder="Nhập họ và tên của bạn"
+                        value={fullName}
+                        disabled={isSyncing}
+                        onChange={(e) => setFullName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-app-muted block">Ngày tháng năm sinh</label>
+                      <input
+                        className="field text-sm"
+                        type="date"
+                        value={dob}
+                        disabled={isSyncing}
+                        onChange={(e) => setDob(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-app-muted block">Số điện thoại</label>
+                      <input
+                        className="field text-sm"
+                        type="tel"
+                        placeholder="Nhập số điện thoại"
+                        value={phone}
+                        disabled={isSyncing}
+                        onChange={(e) => setPhone(e.target.value)}
+                      />
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-app-muted mt-2">
+                      Thông tin này chỉ lưu trữ mã hóa trong két sắt cá nhân của bạn trên client-side nhằm giúp hệ thống cảnh báo nếu Master Password của bạn quá dễ đoán. Hệ thống không lưu trữ plaintext.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-semibold block">Xác nhận Master Password</label>
@@ -398,7 +574,7 @@ export default function AuthPage() {
                   className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-app-border bg-app-surface p-3 text-left shadow-sm transition-all duration-200 ease-premium hover:-translate-y-0.5 hover:border-app-primary/40 hover:shadow-card active:translate-y-0 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-focus disabled:pointer-events-none disabled:opacity-50"
                   type="button"
                   onClick={() => handleRegisterWithProvider("google")}
-                  disabled={authBusy || isSyncing || !registerStrength.meetsPolicy || registerMaster !== registerConfirm || (isRegistered && !resetConfirmed)}
+                  disabled={authBusy || isSyncing}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-bold text-[#4285f4] shadow-sm">

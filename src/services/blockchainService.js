@@ -57,17 +57,25 @@ function getEthereumProvider() {
   return window.ethereum;
 }
 
+let activePrivateKey = null;
+
+export function setActivePrivateKey(key) {
+  activePrivateKey = key;
+}
+
+export function getActivePrivateKey() {
+  return activePrivateKey;
+}
+
 export async function getBlockchainSigner(providerType, uid = null) {
   if (providerType === "google") {
-    if (!uid) {
-      throw new VaultServiceError(ErrorCodes.INVALID_ADDRESS, "Google UID is required for non-custodial wallet");
+    const privateKey = activePrivateKey;
+    if (!privateKey) {
+      throw new VaultServiceError(
+        ErrorCodes.METAMASK_NOT_DETECTED,
+        "Phiên Google đã hết hạn hoặc chưa được kết nối. Vui lòng đăng nhập lại bằng Google."
+      );
     }
-    // Generate private key from Google UID client-side deterministically
-    const encoder = new TextEncoder();
-    const data = encoder.encode(uid + "GoogleWeb3VaultSaltSecret");
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const privateKey = "0x" + hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
     const provider = new JsonRpcProvider(import.meta.env.VITE_RPC_URL || PUBLIC_SEPOLIA_RPC);
     return new Wallet(privateKey, provider);

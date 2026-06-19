@@ -28,6 +28,7 @@ const AppContext = createContext(null);
 export function AppProvider({ children }) {
   const [session, setSession] = useLocalStorage(STORAGE_KEYS.SESSION, defaultSession);
   const [vaults, setVaultsState] = useState([]);
+  const [userProfile, setUserProfileState] = useState({ fullName: "", dob: "", phone: "" });
   const [profile, setProfile] = useLocalStorage(STORAGE_KEYS.USER_PROFILE, defaultProfile);
   const [theme, setTheme] = useLocalStorage(STORAGE_KEYS.THEME, "dark");
   const [bootstrapped, setBootstrapped] = useState(false);
@@ -42,11 +43,16 @@ export function AppProvider({ children }) {
   const toastTimerRef = useRef(null);
   const inactivityTimerRef = useRef(null);
   const vaultsRef = useRef([]);
+  const userProfileRef = useRef({ fullName: "", dob: "", phone: "" });
   const sessionKeyRef = useRef(null);
 
   useEffect(() => {
     vaultsRef.current = vaults;
   }, [vaults]);
+
+  useEffect(() => {
+    userProfileRef.current = userProfile;
+  }, [userProfile]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -114,14 +120,14 @@ export function AppProvider({ children }) {
         normalizedVaults,
         encryptionKey,
         userAddress,
-        { ...options, providerType: session?.provider, uid: session?.google?.uid }
+        { ...options, providerType: session?.provider, uid: session?.google?.uid, userProfile: userProfileRef.current }
       );
       setHasVaultData(normalizedVaults.length > 0 || (await vaultService.hasVaultData(userAddress)));
       return { vaults: normalizedVaults, sync: saveResult?.sync || { status: "unknown" } };
     } catch (error) {
       setVaultsState(previousVaults);
       try {
-        await vaultService.saveVaultsWithKey(previousVaults, encryptionKey, userAddress, { skipWeb3: true });
+        await vaultService.saveVaultsWithKey(previousVaults, encryptionKey, userAddress, { skipWeb3: true, userProfile: userProfileRef.current });
       } catch {
         // Rollback is best-effort.
       }
@@ -207,6 +213,7 @@ export function AppProvider({ children }) {
 
       sessionKeyRef.current = syncResult.encryptionKey;
       setVaultsState(syncResult.vaults);
+      setUserProfileState(syncResult.userProfile || { fullName: "", dob: "", phone: "" });
       setSessionUnlocked(true);
       setHasVaultData(syncResult.vaults.length > 0 || (await vaultService.hasVaultData(targetAddress)));
       setHasMasterPassword(true);
@@ -237,13 +244,14 @@ export function AppProvider({ children }) {
 
       sessionKeyRef.current = rotation.encryptionKey;
       setVaultsState(rotation.vaults);
+      setUserProfileState(rotation.userProfile || { fullName: "", dob: "", phone: "" });
       setSessionUnlocked(true);
 
       await vaultService.saveVaultsWithKey(
         rotation.vaults,
         rotation.encryptionKey,
         userAddress,
-        { providerType: session?.provider, uid: session?.google?.uid }
+        { providerType: session?.provider, uid: session?.google?.uid, userProfile: rotation.userProfile }
       );
       setHasVaultData(rotation.vaults.length > 0 || (await vaultService.hasVaultData(userAddress)));
 
@@ -253,7 +261,7 @@ export function AppProvider({ children }) {
     }
   }, [session]);
 
-  const createMasterPassword = useCallback(async (nextPassword, userAddress = null, providerType = null, googleUid = null) => {
+  const createMasterPassword = useCallback(async (nextPassword, userAddress = null, providerType = null, googleUid = null, profileData = null) => {
     const activeIdentity = session?.wallet || session?.google;
     const targetAddress = userAddress || (await getIdentityAddress(activeIdentity));
     const resolvedProviderType = providerType || session?.provider || "google";
@@ -264,10 +272,11 @@ export function AppProvider({ children }) {
     }
 
     try {
-      const registerResult = await vaultService.registerNewVault(nextPassword, targetAddress, resolvedProviderType, uid);
+      const registerResult = await vaultService.registerNewVault(nextPassword, targetAddress, resolvedProviderType, uid, profileData);
 
       sessionKeyRef.current = registerResult.encryptionKey;
       setVaultsState(registerResult.vaults);
+      setUserProfileState(registerResult.userProfile || { fullName: "", dob: "", phone: "" });
       setSessionUnlocked(true);
       setHasVaultData(false);
       setHasMasterPassword(true);
@@ -412,9 +421,8 @@ export function AppProvider({ children }) {
       );
 
       if (syncResult.synced) {
-        const updatedVaults = Array.isArray(syncResult.vaults)
-          ? syncResult.vaults
-          : await vaultService.loadVaultsWithKey(encryptionKey, userAddress);
+        const updatedVaults = syncResult.vaults;
+        setUserProfileState(syncResult.userProfile || { fullName: "", dob: "", phone: "" });
         setVaultsState(updatedVaults);
         setHasVaultData(updatedVaults.length > 0 || (await vaultService.hasVaultData(userAddress)));
         return { synced: true, reason: syncResult.reason, count: updatedVaults.length };
@@ -472,6 +480,8 @@ export function AppProvider({ children }) {
     exportVaultData,
     importVaultData,
     unlockWithMasterPassword: runSessionUnlock,
+    userProfile,
+    setUserProfile: setUserProfileState,
     syncVaultOnLoginIfNeeded,
     encryptionKey: sessionKeyRef.current
   }), [
@@ -513,6 +523,8 @@ export function AppProvider({ children }) {
     importVaultData,
     runSessionUnlock,
     syncVaultOnLoginIfNeeded,
+    userProfile,
+    setUserProfileState,
     sessionKeyRef.current
   ]);
 

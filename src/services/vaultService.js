@@ -193,7 +193,7 @@ export const vaultService = {
     }
   },
 
-  async unlockAndSyncVault(password, userAddress, providerType = "metamask") {
+  async unlockAndSyncVault(password, userAddress, providerType = "metamask", uid = null) {
     const db = await openDatabase(userAddress);
     const { cid, error: chainError } = await getVaultCidFromChain(userAddress, providerType);
     if (chainError) {
@@ -235,6 +235,24 @@ export const vaultService = {
       );
     }
 
+    // Gotcha 1: Logic kiểm tra Tương thích ngược cực kỳ cẩn thận
+    let vaultData;
+    if (Array.isArray(decrypted)) {
+      // Dữ liệu cũ
+      vaultData = {
+        userProfile: { fullName: "", dob: "", phone: "" },
+        passwordEntries: decrypted
+      };
+    } else if (decrypted && typeof decrypted === "object" && "passwordEntries" in decrypted) {
+      // Dữ liệu mới
+      vaultData = decrypted;
+    } else {
+      vaultData = {
+        userProfile: { fullName: "", dob: "", phone: "" },
+        passwordEntries: []
+      };
+    }
+
     await resolveOrCreateSalt(db, salt);
     await putVaultRecord(db, encryptedPayload);
     await setMeta(db, META_KEY_LAST_SYNCED_CID, cid);
@@ -242,19 +260,24 @@ export const vaultService = {
     await deleteMeta(db, META_KEY_PENDING_SYNC);
 
     return {
-      vaults: decrypted,
+      vaults: normalizeVaultArray(vaultData.passwordEntries),
+      userProfile: vaultData.userProfile || { fullName: "", dob: "", phone: "" },
       encryptionKey
     };
   },
 
-  async registerNewVault(password, userAddress, providerType = "metamask", uid = null) {
+  async registerNewVault(password, userAddress, providerType = "metamask", uid = null, profileData = null) {
     const db = await openDatabase(userAddress);
     const salt = generateSalt();
     await resolveOrCreateSalt(db, salt);
 
     const encryptionKey = await deriveKey(password, salt, { iterations: PBKDF2_ITERATIONS });
-    const emptyVault = [];
-    const encryptedPayload = await encrypt(emptyVault, encryptionKey);
+    const userProfile = profileData || { fullName: "", dob: "", phone: "" };
+    const rawVaultData = {
+      userProfile,
+      passwordEntries: []
+    };
+    const encryptedPayload = await encrypt(rawVaultData, encryptionKey);
 
     const ipfsPayload = {
       encryptedPayload,
@@ -278,7 +301,8 @@ export const vaultService = {
     await deleteMeta(db, META_KEY_PENDING_SYNC);
 
     return {
-      vaults: emptyVault,
+      vaults: [],
+      userProfile,
       encryptionKey
     };
   },
@@ -329,14 +353,40 @@ export const vaultService = {
     return { migrated: migratedCount > 0, count: migratedCount };
   },
 
-  async loadVaultsWithKey(encryptionKey, userAddress) {
+  async loadVaultAndProfileWithKey(encryptionKey, userAddress) {
     ensureEncryptionKey(encryptionKey);
     const db = await openDatabase(userAddress);
     const record = await getVaultRecord(db);
-    if (!record?.payload) return [];
+    if (!record?.payload) {
+      return { vaults: [], userProfile: { fullName: "", dob: "", phone: "" } };
+    }
 
     const decrypted = await decrypt(record.payload, encryptionKey);
-    return normalizeVaultArray(decrypted);
+    let vaultData;
+    if (Array.isArray(decrypted)) {
+      // Dữ liệu cũ
+      vaultData = {
+        userProfile: { fullName: "", dob: "", phone: "" },
+        passwordEntries: decrypted
+      };
+    } else if (decrypted && typeof decrypted === "object" && "passwordEntries" in decrypted) {
+      // Dữ liệu mới
+      vaultData = decrypted;
+    } else {
+      vaultData = {
+        userProfile: { fullName: "", dob: "", phone: "" },
+        passwordEntries: []
+      };
+    }
+    return {
+      vaults: normalizeVaultArray(vaultData.passwordEntries),
+      userProfile: vaultData.userProfile || { fullName: "", dob: "", phone: "" }
+    };
+  },
+
+  async loadVaultsWithKey(encryptionKey, userAddress) {
+    const res = await this.loadVaultAndProfileWithKey(encryptionKey, userAddress);
+    return res.vaults;
   },
 
   async saveVaultsWithKey(vaults, encryptionKey, userAddress, optionsOrSkipIpfs = {}) {
@@ -346,8 +396,14 @@ export const vaultService = {
     const normalizedVaults = normalizeVaultArray(vaults);
     const db = await openDatabase(userAddress);
 
+    const userProfile = optionsOrSkipIpfs.userProfile || { fullName: "", dob: "", phone: "" };
+    const rawVaultData = {
+      userProfile,
+      passwordEntries: normalizedVaults
+    };
+
     emitProgress(options.onProgress, "encrypting", "Đang mã hóa vault...");
-    const encryptedPayload = await encrypt(normalizedVaults, encryptionKey);
+    const encryptedPayload = await encrypt(rawVaultData, encryptionKey);
     const salt = await resolveOrCreateSalt(db);
     const ipfsPayload = {
       encryptedPayload,
@@ -462,7 +518,13 @@ export const vaultService = {
 
       const localSyncedCid = await getMeta(db, META_KEY_LAST_SYNCED_CID);
       if (localSyncedCid === cid) {
-        return { synced: true, reason: "Already up-to-date", vaults: await this.loadVaultsWithKey(encryptionKey, userAddress) };
+        const res = await this.loadVaultAndProfileWithKey(encryptionKey, userAddress);
+        return {
+          synced: true,
+          reason: "Already up-to-date",
+          vaults: res.vaults,
+          userProfile: res.userProfile
+        };
       }
 
       emitProgress(onProgress, "ipfs", "Đang tải vault mới nhất từ IPFS...");
@@ -484,7 +546,7 @@ export const vaultService = {
       const { encryptedPayload, salt } = payloadFromIpfs;
 
       emitProgress(onProgress, "decrypting", "Đang giải mã dữ liệu đồng bộ...");
-      let decrypted = [];
+      let decrypted;
       try {
         decrypted = await decrypt(encryptedPayload, encryptionKey);
       } catch (error) {
@@ -495,8 +557,19 @@ export const vaultService = {
         );
       }
 
-      if (!Array.isArray(decrypted)) {
-        throw new VaultServiceError(ErrorCodes.DECRYPTION_FAILED, "Synced vault payload is not an array");
+      let vaultData;
+      if (Array.isArray(decrypted)) {
+        vaultData = {
+          userProfile: { fullName: "", dob: "", phone: "" },
+          passwordEntries: decrypted
+        };
+      } else if (decrypted && typeof decrypted === "object" && "passwordEntries" in decrypted) {
+        vaultData = decrypted;
+      } else {
+        vaultData = {
+          userProfile: { fullName: "", dob: "", phone: "" },
+          passwordEntries: []
+        };
       }
 
       await resolveOrCreateSalt(db, salt);
@@ -504,7 +577,13 @@ export const vaultService = {
       await setMeta(db, META_KEY_LAST_SYNCED_CID, cid);
       await deleteMeta(db, META_KEY_PENDING_SYNC);
 
-      return { synced: true, reason: "Synced from IPFS", cid, vaults: decrypted };
+      return {
+        synced: true,
+        reason: "Synced from IPFS",
+        cid,
+        vaults: normalizeVaultArray(vaultData.passwordEntries),
+        userProfile: vaultData.userProfile || { fullName: "", dob: "", phone: "" }
+      };
     } catch (error) {
       const normalized = normalizeError(error, ErrorCodes.SYNC_FAILED);
       return {
@@ -521,9 +600,9 @@ export const vaultService = {
     const db = await openDatabase(userAddress);
     const oldKey = await deriveVaultKey(oldPassword, db);
     const nextKey = await deriveVaultKey(nextPassword, db);
-    const currentVaults = await this.loadVaultsWithKey(oldKey, userAddress);
-    await this.saveVaultsWithKey(currentVaults, nextKey, userAddress, { skipWeb3: true });
-    return { vaults: currentVaults, encryptionKey: nextKey };
+    const res = await this.loadVaultAndProfileWithKey(oldKey, userAddress);
+    await this.saveVaultsWithKey(res.vaults, nextKey, userAddress, { skipWeb3: true, userProfile: res.userProfile });
+    return { vaults: res.vaults, userProfile: res.userProfile, encryptionKey: nextKey };
   },
 
   async exportToJson(vaults, masterSecret) {

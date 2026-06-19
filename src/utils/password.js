@@ -98,6 +98,70 @@ function translateCrackTimeDisplay(value) {
     .replace(/centuries?/gi, "Thế kỷ");
 }
 
+export function extractUserInputs(profile) {
+  if (!profile) return [];
+  const { fullName, dob, phone } = profile;
+  const inputs = new Set();
+
+  // 1. fullName: Bỏ dấu tiếng Việt, in thường, tách nhỏ từng từ
+  if (fullName && typeof fullName === "string" && fullName.trim()) {
+    const removeDiacritics = (str) =>
+      str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D");
+    
+    const cleanName = removeDiacritics(fullName).toLowerCase();
+    const words = cleanName.split(/\s+/).filter(Boolean);
+    words.forEach(w => inputs.add(w));
+    
+    // Thêm các từ gốc in thường
+    const originalWords = fullName.toLowerCase().split(/\s+/).filter(Boolean);
+    originalWords.forEach(w => inputs.add(w));
+  }
+
+  // 2. dob: YYYY-MM-DD -> [YYYY, MM, DD, DDMMYYYY, YYYYMMDD, DDMM]
+  if (dob && typeof dob === "string" && dob.trim()) {
+    const parts = dob.split("-"); // [YYYY, MM, DD]
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      inputs.add(year);
+      inputs.add(month);
+      inputs.add(day);
+      inputs.add(day + month + year); // "15082005"
+      inputs.add(year + month + day); // "20050815"
+      inputs.add(day + month);        // "1508"
+      inputs.add(month + day);        // "0815"
+    }
+  }
+
+  // 3. phone: Lấy toàn bộ chuỗi số và 4-6 số cuối
+  if (phone && typeof phone === "string" && phone.trim()) {
+    const cleanedPhone = phone.replace(/\D/g, "");
+    if (cleanedPhone) {
+      inputs.add(cleanedPhone);
+      if (cleanedPhone.length >= 4) {
+        inputs.add(cleanedPhone.slice(-4));
+      }
+      if (cleanedPhone.length >= 5) {
+        inputs.add(cleanedPhone.slice(-5));
+      }
+      if (cleanedPhone.length >= 6) {
+        inputs.add(cleanedPhone.slice(-6));
+      }
+    }
+  }
+
+  return Array.from(inputs).filter(item => typeof item === "string" && item.length >= 2);
+}
+
+export function containsPersonalInfo(password, userInputs) {
+  if (!password || !userInputs || userInputs.length === 0) return false;
+  const lowerPassword = password.toLowerCase();
+  return userInputs.some((input) => {
+    if (typeof input !== "string") return false;
+    const lowerInput = input.trim().toLowerCase();
+    return lowerInput.length >= 2 && lowerPassword.includes(lowerInput);
+  });
+}
+
 export function evaluatePasswordStrength(password = "", userInputs = []) {
   const normalizedPassword = String(password ?? "");
   const loweredPassword = normalizedPassword.toLowerCase();
@@ -121,20 +185,29 @@ export function evaluatePasswordStrength(password = "", userInputs = []) {
   ensureStrengthEngine();
   const result = zxcvbn(normalizedPassword, cleanedInputs);
   const isCommon = COMMON_PASSWORDS.has(loweredPassword);
+  const hasPersonalInfo = containsPersonalInfo(normalizedPassword, cleanedInputs);
   const tooShort = normalizedPassword.length < MIN_PASSWORD_LENGTH;
-  const score = isCommon ? 0 : result.score;
-  const warning = isCommon
+  const score = isCommon || hasPersonalInfo ? 0 : result.score;
+  
+  const warning = hasPersonalInfo
+    ? "Mật khẩu chứa thông tin cá nhân của bạn (Tên/Ngày sinh/SĐT), vui lòng chọn mật khẩu khác!"
+    : isCommon
     ? "Mật khẩu nằm trong danh sách phổ biến, rất dễ bị tấn công."
     : result.feedback.warning || "";
 
-  const suggestions = isCommon
+  const suggestions = hasPersonalInfo
+    ? [
+        "Không dùng thông tin cá nhân (tên, ngày sinh, số điện thoại) trong mật khẩu của bạn.",
+        "Chọn một mật khẩu hoàn toàn khác biệt và ngẫu nhiên."
+      ]
+    : isCommon
     ? [
         "Không dùng mật khẩu phổ biến hoặc mang tính mặc định.",
         "Tăng độ dài và kết hợp chữ hoa, chữ thường, số, ký tự đặc biệt."
       ]
     : result.feedback.suggestions || [];
 
-  const meetsPolicy = !tooShort && score >= SAFE_SCORE_THRESHOLD;
+  const meetsPolicy = !tooShort && score >= SAFE_SCORE_THRESHOLD && !hasPersonalInfo;
 
   return {
     score,

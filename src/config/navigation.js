@@ -4,11 +4,7 @@ import {
   ChartColumnBig,
   Settings,
   Wand2,
-  Upload,
-  Download,
-  UserRound,
-  LockKeyhole,
-  CloudCog
+  Upload
 } from "lucide-react";
 
 export const navigationGroups = [
@@ -22,9 +18,7 @@ export const navigationGroups = [
     icon: Wrench,
     children: [
       { label: "Trình tạo", icon: Wand2, path: "/app/tools/generator" },
-      { label: "Nhập", icon: Upload, path: "/app/tools/import" },
-      { label: "Xuất", icon: Download, path: "/app/tools/export" },
-      { label: "Blockchain", icon: CloudCog, path: "/app/tools/blockchain" }
+      { label: "Nhập & Xuất", icon: Upload, path: "/app/tools/import-export" }
     ]
   },
   {
@@ -33,12 +27,9 @@ export const navigationGroups = [
     path: "/app/reports"
   },
   {
-    label: "Cài đặt",
+    label: "Cài đặt bảo mật",
     icon: Settings,
-    children: [
-      { label: "Tài khoản của tôi", icon: UserRound, path: "/app/settings/account" },
-      { label: "Bảo mật", icon: LockKeyhole, path: "/app/settings/security" }
-    ]
+    path: "/app/settings/security"
   }
 ];
 
