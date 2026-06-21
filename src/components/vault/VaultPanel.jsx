@@ -27,12 +27,12 @@ const emptyForm = { url: "", username: "", password: "" };
 function InfoTooltip({ content }) {
   return (
     <div className="relative group inline-block ml-1.5 cursor-help">
-      <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-[10px] font-semibold text-slate-450 hover:text-white transition-colors">
+      <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-app-border bg-app-surface-alt text-[10px] font-semibold text-app-muted hover:text-app-text transition-colors">
         ?
       </span>
-      <div className="absolute bottom-full left-1/2 z-50 mb-2 w-52 -translate-x-1/2 scale-95 rounded-xl bg-slate-900 border border-slate-800 p-2.5 text-xs text-slate-300 shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto transition-all duration-200">
+      <div className="absolute bottom-full left-1/2 z-50 mb-2 w-52 -translate-x-1/2 scale-95 rounded-xl bg-app-surface border border-app-border p-2.5 text-xs text-app-text shadow-modal opacity-0 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto transition-all duration-200">
         <span className="block text-left font-sans font-normal leading-normal">{content}</span>
-        <div className="absolute top-full left-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-0.5 rotate-45 bg-slate-900 border-r border-b border-slate-800" />
+        <div className="absolute top-full left-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-0.5 rotate-45 bg-app-surface border-r border-b border-app-border" />
       </div>
     </div>
   );
@@ -114,7 +114,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
 
         return matchMode && matchSearch;
       });
-  }, [mode, search, vaultList]);
+  }, [mode, search, vaultList, personalInputs]);
 
   const openCreate = () => {
     if (isSaving) return;
@@ -226,11 +226,11 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
       {/* Header Section */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-400">Vault Overview</p>
-          <h2 className="mt-1 text-2xl font-black text-white tracking-tight">Két Sắt Cá Nhân</h2>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-app-primary">Vault Overview</p>
+          <h2 className="mt-1 text-2xl font-black text-app-text tracking-tight">Két Sắt Cá Nhân</h2>
         </div>
         <button 
-          className="btn-primary min-h-[2.75rem] px-5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-all duration-300 shadow-glow shadow-emerald-500/10 flex items-center gap-2"
+          className="btn-primary min-h-[2.75rem] px-5 flex items-center gap-2"
           onClick={openCreate} 
           type="button" 
           disabled={isSaving}
@@ -242,15 +242,15 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
 
       {/* Filter / Stat Cards Grid */}
       <div className="grid gap-4 md:grid-cols-3">
-        {statCards.map(({ id, label, value, Icon, tone, helper }) => {
+        {statCards.map(({ id, label, value, Icon, helper }) => {
           const active = mode === id;
 
           return (
             <button
-              className={`group flex items-center justify-between p-5 text-left border rounded-2xl transition-all duration-300 focus:outline-none ${
+              className={`group flex items-center justify-between p-5 text-left border rounded-2xl transition-all duration-200 focus:outline-none ${
                 active 
-                  ? "border-emerald-500/30 bg-slate-900/80 shadow-lg shadow-emerald-500/5" 
-                  : "border-white/5 bg-slate-900/40 hover:bg-slate-900/60 hover:border-slate-800"
+                  ? "border-app-primary/60 bg-app-surface shadow-md shadow-app-primary/5" 
+                  : "border-app-border bg-app-surface-alt/40 hover:bg-app-surface hover:border-app-border/80"
               }`}
               key={id}
               onClick={() => setMode(id)}
@@ -258,17 +258,17 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
               disabled={isSaving}
             >
               <div className="space-y-1">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <p className="text-xs font-bold uppercase tracking-wider text-app-muted flex items-center gap-1.5">
                   <span>{label}</span>
                   <InfoTooltip content={tooltipContent[id]} />
                 </p>
                 <p className={`text-3xl font-black tracking-tight ${
-                  id === "all" ? "text-slate-100" : id === "safe" ? "text-emerald-400" : "text-red-400"
+                  id === "all" ? "text-app-text" : id === "safe" ? "text-app-success" : "text-app-danger"
                 }`}>{value}</p>
-                <p className="text-xs text-slate-500 font-medium">{helper}</p>
+                <p className="text-xs text-app-muted/80 font-medium">{helper}</p>
               </div>
-              <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-slate-950 border border-white/5 ${
-                id === "all" ? "text-slate-400" : id === "safe" ? "text-emerald-400" : "text-red-400"
+              <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-app-surface-alt border border-app-border ${
+                id === "all" ? "text-app-muted" : id === "safe" ? "text-app-success" : "text-app-danger"
               }`}>
                 <Icon className="h-5.5 w-5.5 transition-transform duration-300 group-hover:scale-110" />
               </div>
@@ -278,19 +278,19 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
       </div>
 
       {/* Main Vault Panel Container */}
-      <div className="bg-slate-900/20 border border-white/5 rounded-3xl p-4 lg:p-6 shadow-xl backdrop-blur-sm">
+      <div className="border border-app-border bg-app-surface/40 rounded-3xl p-4 lg:p-6 shadow-card backdrop-blur-sm">
         {isLoading ? <VaultSkeleton /> : null}
 
         {/* Empty States */}
         {!isLoading && filtered.length === 0 ? (
-          <div className="flex min-h-[20rem] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/10 p-8 text-center max-w-md mx-auto my-6">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 border border-slate-800 text-slate-400 shadow-xl mb-4">
-              {isInitialEmpty ? <LockKeyhole className="h-7 w-7 text-emerald-450" /> : <SearchX className="h-7 w-7 text-slate-500" />}
+          <div className="flex min-h-[20rem] flex-col items-center justify-center rounded-2xl border border-dashed border-app-border bg-app-surface-alt/25 p-8 text-center max-w-md mx-auto my-6">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-app-surface border border-app-border text-app-muted shadow-md mb-4">
+              {isInitialEmpty ? <LockKeyhole className="h-7 w-7 text-app-primary" /> : <SearchX className="h-7 w-7" />}
             </div>
-            <h3 className="text-base font-bold text-slate-100">
+            <h3 className="text-base font-bold text-app-text">
               {isInitialEmpty ? "Két sắt của bạn trống" : "Không tìm thấy kết quả"}
             </h3>
-            <p className="mt-2 text-xs leading-relaxed text-slate-400 max-w-sm">
+            <p className="mt-2 text-xs leading-relaxed text-app-muted max-w-sm">
               {isInitialEmpty
                 ? "Lưu trữ thông tin tài khoản và mật khẩu đầu tiên của bạn lên hệ thống Web3 bảo mật."
                 : hasSearch
@@ -298,7 +298,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                   : "Không tìm thấy mật khẩu nào ở bộ lọc này. Hãy thử đặt lại bộ lọc."}
             </p>
             <button 
-              className="btn-soft min-h-[2.5rem] px-5 mt-5 border-slate-800 hover:border-slate-700 bg-slate-900 text-xs font-bold text-slate-200" 
+              className="btn-soft min-h-[2.5rem] px-5 mt-5" 
               type="button" 
               onClick={isInitialEmpty ? openCreate : () => setMode("all")}
             >
@@ -317,25 +317,25 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
 
               return (
                 <article
-                  className="group rounded-2xl border border-slate-800/85 bg-slate-900/30 p-4 shadow-sm hover:border-slate-700/60 hover:bg-slate-900/50 transition-all duration-300"
+                  className="group rounded-2xl border border-app-border bg-app-surface p-4 shadow-sm hover:border-app-primary/45 hover:bg-app-surface-alt transition-all duration-300"
                   key={`${item.url}-${item.index}`}
                 >
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex min-w-0 items-start gap-4">
                       {/* Domain Icon Box */}
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 border border-white/5 text-emerald-400">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-app-surface-alt border border-app-border text-app-primary">
                         <Globe2 className="h-5 w-5" />
                       </div>
                       
                       {/* Domain and Info Box */}
                       <div className="min-w-0 space-y-1.5">
                         <div className="flex flex-wrap items-center gap-2.5">
-                          <h3 className="truncate text-base font-extrabold text-white tracking-tight leading-tight">{domain}</h3>
+                          <h3 className="truncate text-base font-extrabold text-app-text tracking-tight leading-tight">{domain}</h3>
                           <span
                             className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
                               safe
-                                ? "bg-emerald-500/5 border border-emerald-500/20 text-emerald-400"
-                                : "bg-red-500/5 border border-red-500/20 text-red-400"
+                                ? "bg-app-success/5 border border-app-success/20 text-app-success"
+                                : "bg-app-danger/5 border border-app-danger/20 text-app-danger"
                             }`}
                           >
                             {safe ? <ShieldCheck className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}
@@ -344,14 +344,14 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                         </div>
 
                         {/* Details row */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400 font-medium">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-app-muted font-medium">
                           <span className="inline-flex min-w-0 items-center gap-1.5">
-                            <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                            <UserRound className="h-3.5 w-3.5 shrink-0 text-app-muted" />
                             <span className="truncate">{item.username}</span>
                           </span>
-                          <span className="font-mono text-xs tracking-[0.2em] text-slate-600">••••••••••••</span>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-950 border border-slate-800 ${
-                            safe ? "text-emerald-400" : "text-amber-400"
+                          <span className="font-mono text-xs tracking-[0.2em] text-app-muted/50">••••••••••••</span>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-app-surface-alt border border-app-border ${
+                            safe ? "text-app-success" : "text-app-warning"
                           }`}>
                             {strength.label}
                           </span>
@@ -362,7 +362,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                     {/* Action buttons controls */}
                     <div className="flex items-center justify-end gap-2">
                       <button 
-                        className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 text-slate-400 hover:text-white hover:bg-slate-800 hover:border-slate-700 active:scale-95 transition-all duration-200" 
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-app-border bg-app-surface-alt text-app-muted hover:text-app-text hover:bg-app-surface hover:border-app-primary/45 active:scale-95 transition-all duration-200" 
                         type="button" 
                         onClick={() => copyPassword(item.password)} 
                         aria-label={`Sao chép mật khẩu cho ${domain}`} 
@@ -371,7 +371,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                         <Copy className="h-4 w-4" />
                       </button>
                       <button 
-                        className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 text-slate-400 hover:text-white hover:bg-slate-800 hover:border-slate-700 active:scale-95 transition-all duration-200" 
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-app-border bg-app-surface-alt text-app-muted hover:text-app-text hover:bg-app-surface hover:border-app-primary/45 active:scale-95 transition-all duration-200" 
                         type="button" 
                         onClick={() => openEdit(item.index)} 
                         aria-label={`Chỉnh sửa ${domain}`} 
@@ -380,7 +380,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button
-                        className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 text-red-400 hover:text-white hover:bg-red-500/10 hover:border-red-500/20 active:scale-95 transition-all duration-200"
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-app-border bg-app-surface-alt text-app-danger hover:bg-app-danger/10 hover:border-app-danger/25 active:scale-95 transition-all duration-200"
                         type="button"
                         onClick={() => remove(item.index)}
                         aria-label={`Xóa ${domain}`}
@@ -409,8 +409,8 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
       >
         <form className="relative space-y-4" onSubmit={save}>
           {isSaving ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-slate-950/90 p-6 backdrop-blur-sm">
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-panel">
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-app-bg/95 p-6 backdrop-blur-sm">
+              <div className="rounded-2xl border border-app-border bg-app-surface p-4 shadow-panel">
                 <LoadingSpinner
                   size="lg"
                   label={`Đang lưu... (${saveSeconds}s)`}
@@ -421,9 +421,9 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           ) : null}
 
           <div className="space-y-1.5">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Website URL</span>
+            <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Website URL</span>
             <input
-              className="field bg-black/20 border-white/10 text-white placeholder-slate-650 focus:border-emerald-500 focus:ring-emerald-500/25"
+              className="field"
               placeholder="https://example.com"
               required
               value={form.url}
@@ -433,9 +433,9 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           </div>
           
           <div className="space-y-1.5">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Username hoặc Email</span>
+            <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Username hoặc Email</span>
             <input
-              className="field bg-black/20 border-white/10 text-white placeholder-slate-650 focus:border-emerald-500 focus:ring-emerald-500/25"
+              className="field"
               placeholder="name@example.com"
               required
               value={form.username}
@@ -445,10 +445,10 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           </div>
           
           <div className="space-y-1.5">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Mật khẩu</span>
+            <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Mật khẩu</span>
             <div className="relative">
               <input
-                className="field bg-black/20 border-white/10 text-white placeholder-slate-650 focus:border-emerald-500 focus:ring-emerald-500/25 pr-12 font-mono"
+                className="field pr-12 font-mono"
                 type={showFormPassword ? "text" : "password"}
                 placeholder="Nhập mật khẩu"
                 required
@@ -457,7 +457,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
                 onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
               />
               <button
-                className="icon-button absolute inset-y-0 right-2 my-auto h-8 w-8 rounded-lg border-none bg-transparent hover:bg-white/5 text-slate-400 hover:text-white"
+                className="icon-button absolute inset-y-0 right-2 my-auto h-8 w-8 rounded-lg border-none bg-transparent hover:bg-app-surface-alt text-app-muted hover:text-app-text"
                 type="button"
                 onClick={() => setShowFormPassword((prev) => !prev)}
                 aria-label={showFormPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
@@ -476,7 +476,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           
           <div className="pt-2">
             <button
-              className="btn-primary w-full h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-glow shadow-emerald-500/10 flex items-center justify-center"
+              className="btn-primary w-full"
               type="submit"
               disabled={isSaving}
             >
