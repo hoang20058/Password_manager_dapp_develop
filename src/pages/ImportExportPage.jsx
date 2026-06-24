@@ -101,9 +101,6 @@ export default function ImportExportPage() {
         <div className="panel p-6 space-y-5">
           <div>
             <h3 className="text-lg font-bold text-app-text">📥 Nhập dữ liệu</h3>
-            <p className="text-xs text-app-muted mt-1">
-              Khôi phục hoặc bổ sung vault từ tệp sao lưu JSON.
-            </p>
           </div>
 
           <div className="flex flex-col gap-4">
@@ -113,7 +110,7 @@ export default function ImportExportPage() {
               onClick={() => fileRef.current?.click()}
             >
               <Upload className="h-5 w-5" />
-              Chọn file JSON để nhập
+              Nhập file
             </button>
             <input
               ref={fileRef}
@@ -149,18 +146,6 @@ export default function ImportExportPage() {
             </div>
           )}
 
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-app-muted">Xem trước dữ liệu</p>
-            {preview ? (
-              <pre className="overflow-auto max-h-48 rounded-2xl bg-slate-950 p-4 text-xs font-mono text-slate-100 border border-app-border">
-                {JSON.stringify(preview, null, 2)}
-              </pre>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-app-border bg-app-surface-alt/30 p-8 text-center text-sm text-app-muted">
-                Chưa có dữ liệu xem trước. Hãy chọn một file JSON để phân tích.
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Right Column: Export & Clear Section */}
@@ -169,9 +154,6 @@ export default function ImportExportPage() {
           <div className="panel p-6 space-y-5">
             <div>
               <h3 className="text-lg font-bold text-app-text">📤 Xuất dữ liệu</h3>
-              <p className="text-xs text-app-muted mt-1">
-                Tạo bản sao lưu mật khẩu dưới dạng JSON. Dữ liệu sẽ được mã hóa bằng Master Password.
-              </p>
             </div>
 
             <button
@@ -180,11 +162,11 @@ export default function ImportExportPage() {
               onClick={() => requestMasterAction("Xuất dữ liệu", runExport, { forceReauth: true })}
             >
               <Download className="h-5 w-5" />
-              Xuất file JSON mã hóa
+              Xuất file
             </button>
 
             <p className="text-xs text-app-muted leading-relaxed">
-              * Tệp xuất chứa toàn bộ thông tin đăng nhập được mã hóa an toàn. Bạn có thể khôi phục lại bất kỳ lúc nào bằng cách sử dụng chức năng Nhập dữ liệu với cùng Master Password hiện tại.
+              * Tệp xuất chứa toàn bộ thông tin đăng nhập được mã hóa an toàn. Bạn có thể khôi phục lại bất kỳ lúc với cùng Master Password hiện tại.
             </p>
           </div>
 
@@ -195,7 +177,7 @@ export default function ImportExportPage() {
               <div>
                 <h3 className="text-base font-bold text-red-500 dark:text-red-400">Vùng nguy hiểm</h3>
                 <p className="text-xs text-app-muted mt-1 leading-relaxed">
-                  Hành động này sẽ xóa sạch toàn bộ thông tin đăng nhập đang lưu trữ trong két sắt của bạn trên trình duyệt hiện tại. Đảm bảo bạn đã xuất dữ liệu sao lưu trước khi thực hiện.
+                  Hành động này sẽ xóa sạch toàn bộ dữ liệu đang lưu trữ trong két sắt của bạn trên trình duyệt hiện tại. Bạn nên xuất dữ liệu sao lưu trước khi thực hiện.
                 </p>
               </div>
             </div>
@@ -216,7 +198,7 @@ export default function ImportExportPage() {
       <Modal open={isPromptOpen} title="Xác nhận nhập dữ liệu" onClose={isImporting ? () => { } : closePrompt}>
         <div className="space-y-4">
           <p className="text-sm text-app-muted">
-            Nếu tệp JSON được mã hóa bằng mật khẩu master khác, vui lòng nhập mật khẩu đó bên dưới để giải mã. Nếu đây là tệp JSON plaintext (không mã hóa), hãy nhấn <strong>Skip</strong> để nhập trực tiếp.
+            Nếu tệp JSON được mã hóa bằng mật khẩu master khác, vui lòng nhập mật khẩu đó bên dưới để giải mã. Nếu đây là tệp JSON(không mã hóa), hãy nhấn <strong>bỏ qua</strong> để nhập trực tiếp.
           </p>
           <input
             className="field"
@@ -232,7 +214,7 @@ export default function ImportExportPage() {
               Hủy bỏ
             </button>
             <button className="btn-soft" type="button" onClick={() => executeImport("")} disabled={isImporting}>
-              Skip (Plaintext)
+              Bỏ qua
             </button>
             <button
               className="btn-primary"
@@ -240,7 +222,7 @@ export default function ImportExportPage() {
               onClick={() => executeImport(importPassword)}
               disabled={isImporting}
             >
-              {isImporting ? "Đang giải mã..." : "Giải mã & Nhập"}
+              {isImporting ? "Đang giải mã..." : "Nhập"}
             </button>
           </div>
         </div>

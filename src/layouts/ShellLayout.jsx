@@ -53,9 +53,14 @@ export default function ShellLayout() {
                 <p className="mt-2 text-sm text-app-muted">
                   Nhập master password một lần để mở khóa và tiếp tục sử dụng ứng dụng.
                 </p>
-                <button className="btn-primary mt-4" type="button" onClick={requestSessionUnlock}>
-                  Mở khóa phiên
-                </button>
+                <div className="mt-4 flex justify-center gap-2">
+                  <button className="btn-soft border-red-500/30 text-red-500 hover:bg-red-500/10" type="button" onClick={logout}>
+                    Đăng xuất
+                  </button>
+                  <button className="btn-primary" type="button" onClick={requestSessionUnlock}>
+                    Mở khóa phiên
+                  </button>
+                </div>
               </div>
             </div>
           ) : null}
@@ -67,6 +72,7 @@ export default function ShellLayout() {
         error={masterGate.error}
         onClose={closeMasterGate}
         onSubmit={confirmMasterGate}
+        onLogout={logout}
       />
       <Toast toast={toast} onClose={clearToast} />
     </main>

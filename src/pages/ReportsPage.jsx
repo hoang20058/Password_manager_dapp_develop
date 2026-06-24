@@ -1,17 +1,16 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import PageHeader from "../components/shared/PageHeader";
 import { evaluatePasswordStrength, extractUserInputs, containsPersonalInfo, getDomainName } from "../utils/password";
-import { 
-  ShieldAlert, 
-  ShieldCheck, 
-  AlertTriangle, 
-  KeyRound, 
-  Globe2, 
-  UserRound, 
-  Copy, 
-  AlertCircle, 
-  Activity
+import {
+  ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
+  KeyRound,
+  Copy,
+  AlertCircle,
+  Globe2,
+  UserRound
 } from "lucide-react";
 
 export default function ReportsPage() {
@@ -32,7 +31,7 @@ export default function ReportsPage() {
     // Grouping passwords to find duplicates using a hash map
     const pwdGroups = {};
     vaults.forEach((item) => {
-      const pwd = item.password || "";
+      const pwd = String(item.password ?? "");
       if (!pwdGroups[pwd]) {
         pwdGroups[pwd] = [];
       }
@@ -49,10 +48,11 @@ export default function ReportsPage() {
 
     // Evaluate each vault item for local vulnerabilities
     const itemsWithIssues = vaults.map((item, index) => {
-      const strength = evaluatePasswordStrength(item.password, personalInputs);
+      const pwdStr = String(item.password ?? "");
+      const strength = evaluatePasswordStrength(pwdStr, [item.url, item.username], personalInputs);
       const isWeak = strength.score <= 1;
-      const isDuplicate = duplicatePasswords.has(item.password || "");
-      const hasPersonalInfo = containsPersonalInfo(item.password, personalInputs);
+      const isDuplicate = duplicatePasswords.has(pwdStr);
+      const hasPersonalInfo = containsPersonalInfo(pwdStr, personalInputs);
 
       if (isWeak) weakCount++;
       if (hasPersonalInfo) personalInfoCount++;
@@ -121,8 +121,8 @@ export default function ReportsPage() {
       title: "Mật khẩu yếu",
       value: analytics.weakCount,
       icon: ShieldAlert,
-      color: analytics.weakCount > 0 
-        ? "text-red-500 bg-red-500/10 border-red-500/20 dark:text-red-400" 
+      color: analytics.weakCount > 0
+        ? "text-red-500 bg-red-500/10 border-red-500/20 dark:text-red-400"
         : "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400",
       description: "zxcvbn ≤ 1"
     },
@@ -130,8 +130,8 @@ export default function ReportsPage() {
       title: "Trùng lặp",
       value: analytics.duplicateCount,
       icon: AlertTriangle,
-      color: analytics.duplicateCount > 0 
-        ? "text-amber-500 bg-amber-500/10 border-amber-500/20 dark:text-amber-400" 
+      color: analytics.duplicateCount > 0
+        ? "text-amber-500 bg-amber-500/10 border-amber-500/20 dark:text-amber-400"
         : "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400",
       description: "Dùng lại mật khẩu"
     },
@@ -139,8 +139,8 @@ export default function ReportsPage() {
       title: "Vi phạm thông tin",
       value: analytics.personalInfoCount,
       icon: AlertCircle,
-      color: analytics.personalInfoCount > 0 
-        ? "text-rose-500 bg-rose-500/10 border-rose-500/20 dark:text-rose-400" 
+      color: analytics.personalInfoCount > 0
+        ? "text-rose-500 bg-rose-500/10 border-rose-500/20 dark:text-rose-400"
         : "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400",
       description: "Chứa Tên/Ngày sinh/SĐT"
     }
@@ -151,7 +151,7 @@ export default function ReportsPage() {
       <PageHeader
         eyebrow="Báo cáo bảo mật"
         title="Trung tâm An ninh"
-        description="Đánh giá sức khỏe két sắt cục bộ trên RAM dựa trên mô hình Zero-Knowledge."
+        description="Đánh giá mật khẩu đang được lưu trữ"
       />
 
       {/* SECTION 1: Health Summary Cards */}
@@ -177,13 +177,9 @@ export default function ReportsPage() {
       <div className="panel p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-app-border pb-3">
           <div>
-            <h3 className="text-lg font-bold text-app-text">Đánh giá két sắt</h3>
-            <p className="text-sm text-app-muted">Phân tích rủi ro bảo mật cục bộ của từng tài khoản</p>
+            <h3 className="text-lg font-bold text-app-text">Kết quả đánh giá</h3>
+            <p className="text-sm text-app-muted">Phân tích rủi ro bảo mật</p>
           </div>
-          <span className="flex items-center gap-1.5 rounded-full bg-app-surface-alt px-3 py-1 text-xs font-medium text-app-muted">
-            <Activity className="h-3.5 w-3.5 text-app-primary" />
-            Kiểm tra cục bộ (RAM)
-          </span>
         </div>
 
         {analytics.itemsWithIssues.length === 0 ? (

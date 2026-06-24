@@ -1,4 +1,4 @@
-export async function hashText(text) {
+async function hashText(text) {
   const encoder = new TextEncoder();
   const buffer = await crypto.subtle.digest("SHA-256", encoder.encode(text));
   return Array.from(new Uint8Array(buffer))
@@ -10,7 +10,7 @@ function normalizeInputSecret(value) {
   return String(value ?? "");
 }
 
-export function normalizeStoredSecret(storedValue) {
+function normalizeStoredSecret(storedValue) {
   if (typeof storedValue !== "string") return "";
 
   const trimmed = storedValue.trim();
@@ -30,12 +30,12 @@ export function normalizeStoredSecret(storedValue) {
   return trimmed;
 }
 
-export async function hashSecret(text) {
+async function hashSecret(text) {
   const normalized = normalizeInputSecret(text);
   return `sha256:${await hashText(normalized)}`;
 }
 
-export async function verifySecret(text, storedValue) {
+async function verifySecret(text, storedValue) {
   const normalizedStored = normalizeStoredSecret(storedValue);
   const normalizedInput = normalizeInputSecret(text);
 
@@ -53,10 +53,10 @@ export const PBKDF2_ITERATIONS = 310000;
 export const PBKDF2_SALT_BYTES = 16;
 export const AES_GCM_IV_BYTES = 12;
 export const AES_GCM_KEY_BITS = 256;
-export const AES_CIPHER_VERSION = 1;
+const AES_CIPHER_VERSION = 1;
 const AES_EXPORT_ALGORITHM = "AES-256-GCM";
 const PASSWORD_VERIFIER_ALGORITHM = "PBKDF2-SHA256";
-export const PASSWORD_VERIFIER_VERSION = 1;
+const PASSWORD_VERIFIER_VERSION = 1;
 
 export class CryptoOperationError extends Error {
   constructor(code, message, cause) {
@@ -136,17 +136,7 @@ export function generateSalt(size = PBKDF2_SALT_BYTES) {
   return bytesToBase64(randomBytes(size));
 }
 
-export function generateIv(size = AES_GCM_IV_BYTES) {
-  return bytesToBase64(randomBytes(size));
-}
 
-export function encodeBytes(value) {
-  return bytesToBase64(ensureBytes(value, "value"));
-}
-
-export function decodeBytes(base64Value) {
-  return base64ToBytes(base64Value, "value");
-}
 
 async function derivePasswordBits(password, salt, iterations) {
   const keyMaterial = await crypto.subtle.importKey(
@@ -196,7 +186,7 @@ function normalizePasswordVerifier(storedValue) {
   return null;
 }
 
-export async function createPasswordVerifier(password, options = {}) {
+async function createPasswordVerifier(password, options = {}) {
   ensureCryptoApis();
 
   const normalizedPassword = normalizeInputSecret(password);
@@ -221,7 +211,7 @@ export async function createPasswordVerifier(password, options = {}) {
   };
 }
 
-export async function verifyPasswordVerifier(password, storedValue) {
+async function verifyPasswordVerifier(password, storedValue) {
   const normalizedPassword = normalizeInputSecret(password);
   const verifier = normalizePasswordVerifier(storedValue);
   if (!verifier || !normalizedPassword) return false;

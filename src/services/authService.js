@@ -51,6 +51,12 @@ export async function signInWithGoogle() {
   };
 }
 
+export function restoreGooglePrivateKey(uid, email) {
+  if (!uid) return;
+  const privateKey = ethers.id("dapp_secret_salt_" + uid + email);
+  setActivePrivateKey(privateKey);
+}
+
 export async function signOutGoogle() {
   try {
     await signOut(auth);
@@ -58,3 +64,4 @@ export async function signOutGoogle() {
     console.error("Error signing out Google:", error);
   }
 }
+

@@ -28,7 +28,7 @@ export default function GeneratorPage() {
       <PageHeader
         eyebrow="Công cụ"
         title="Trình tạo mật khẩu mạnh"
-        description="Sinh mật khẩu mạnh theo tiêu chí bảo mật và phù hợp cho DApp hoặc ví cá nhân."
+        description="Sinh mật khẩu mạnh theo tiêu chí bảo mật và nhu cầu cá nhân."
       />
       <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <div className="panel p-6">
@@ -68,7 +68,7 @@ export default function GeneratorPage() {
         </div>
         <div className="panel p-6 text-sm text-app-muted">
           <p className="font-semibold text-app-text">Mẹo bảo mật</p>
-          <p className="mt-2">Mật khẩu mạnh nên có độ dài từ 16 ký tự trở lên, kết hợp chữ hoa, chữ thường, số và ký tự đặc biệt.</p>
+          <p className="mt-2">Mật khẩu mạnh nên có độ dài từ 8 ký tự trở lên, kết hợp chữ hoa, chữ thường, số và ký tự đặc biệt.</p>
         </div>
       </div>
     </section>

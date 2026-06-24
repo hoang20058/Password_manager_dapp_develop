@@ -7,11 +7,11 @@ import { Shield, User, Lock, Clock, Copy, Check } from "lucide-react";
 import { getIdentityAddress } from "../services/vaultService";
 
 export default function SecurityPage() {
-  const { 
-    updateMasterPassword, 
-    autoLockMinutes, 
-    setAutoLockMinutes, 
-    userProfile, 
+  const {
+    updateMasterPassword,
+    autoLockMinutes,
+    setAutoLockMinutes,
+    userProfile,
     setUserProfile,
     vaults,
     setVaults,
@@ -66,7 +66,7 @@ export default function SecurityPage() {
   );
 
   const masterStrength = useMemo(
-    () => evaluatePasswordStrength(masterForm.next, personalInputs),
+    () => evaluatePasswordStrength(masterForm.next, [], personalInputs),
     [masterForm.next, personalInputs]
   );
 
@@ -74,7 +74,7 @@ export default function SecurityPage() {
     event.preventDefault();
     if (!masterStrength.meetsPolicy) return setMessage("Master password mới chưa đủ mạnh");
     if (masterForm.next !== masterForm.confirm) return setMessage("Xác nhận master password không khớp");
-    
+
     setMessage("Đang cập nhật master password...");
     const result = await updateMasterPassword(masterForm.current, masterForm.next);
     setMessage(result.ok ? "Đã đổi master password thành công!" : result.message);
@@ -124,11 +124,10 @@ export default function SecurityPage() {
       <div className="flex border-b border-white/5">
         <button
           onClick={() => setActiveTab("security")}
-          className={`flex items-center gap-2 px-6 py-3.5 text-sm font-semibold border-b-2 transition-all duration-200 focus:outline-none ${
-            activeTab === "security"
+          className={`flex items-center gap-2 px-6 py-3.5 text-sm font-semibold border-b-2 transition-all duration-200 focus:outline-none ${activeTab === "security"
               ? "border-app-primary text-app-primary"
               : "border-transparent text-app-muted hover:text-app-text"
-          }`}
+            }`}
           type="button"
         >
           <Lock className="h-4 w-4" />
@@ -136,11 +135,10 @@ export default function SecurityPage() {
         </button>
         <button
           onClick={() => setActiveTab("profile")}
-          className={`flex items-center gap-2 px-6 py-3.5 text-sm font-semibold border-b-2 transition-all duration-200 focus:outline-none ${
-            activeTab === "profile"
+          className={`flex items-center gap-2 px-6 py-3.5 text-sm font-semibold border-b-2 transition-all duration-200 focus:outline-none ${activeTab === "profile"
               ? "border-app-primary text-app-primary"
               : "border-transparent text-app-muted hover:text-app-text"
-          }`}
+            }`}
           type="button"
         >
           <User className="h-4 w-4" />
@@ -163,11 +161,8 @@ export default function SecurityPage() {
                 <Clock className="h-4 w-4 text-app-primary" />
                 Tự động khóa phiên
               </h3>
-              <p className="text-xs text-app-muted leading-normal">
-                Phiên làm việc sẽ tự động khóa sau khoảng thời gian không sử dụng để đảm bảo an toàn. Khi bạn thao tác trong ứng dụng, bộ đếm thời gian sẽ được làm mới.
-              </p>
             </div>
-            
+
             <div className="space-y-2 pt-2">
               <label className="text-xs font-bold text-app-muted uppercase tracking-wider block" htmlFor="auto-lock-minutes">
                 Thời gian chờ trước khi khóa
@@ -193,62 +188,59 @@ export default function SecurityPage() {
                 <Shield className="h-4 w-4 text-app-primary" />
                 Đổi Master Password
               </h3>
-              <p className="text-xs text-app-muted leading-normal">
-                Thay đổi mật khẩu chủ dùng để mã hóa và giải mã dữ liệu két sắt cục bộ của bạn.
-              </p>
             </div>
-            
+
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Mật khẩu hiện tại</span>
-                <input 
-                  className="field" 
-                  type="password" 
-                  placeholder="Nhập mật khẩu hiện tại" 
+                <input
+                  className="field"
+                  type="password"
+                  placeholder="Nhập mật khẩu hiện tại"
                   required
-                  value={masterForm.current} 
-                  onChange={(event) => setMasterForm((prev) => ({ ...prev, current: event.target.value }))} 
+                  value={masterForm.current}
+                  onChange={(event) => setMasterForm((prev) => ({ ...prev, current: event.target.value }))}
                 />
               </div>
 
               <div className="space-y-1.5">
                 <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Mật khẩu mới</span>
-                <input 
-                  className="field" 
-                  type="password" 
-                  placeholder="Nhập mật khẩu mới" 
+                <input
+                  className="field"
+                  type="password"
+                  placeholder="Nhập mật khẩu mới"
                   required
-                  value={masterForm.next} 
-                  onChange={(event) => setMasterForm((prev) => ({ ...prev, next: event.target.value }))} 
+                  value={masterForm.next}
+                  onChange={(event) => setMasterForm((prev) => ({ ...prev, next: event.target.value }))}
                 />
               </div>
 
-              <PasswordStrengthHint 
-                password={masterForm.next} 
-                userInputs={personalInputs} 
-                policyText="Master password mới của bạn nên đạt mức Khá trở lên và tối thiểu 8 ký tự." 
+              <PasswordStrengthHint
+                password={masterForm.next}
+                userInputs={personalInputs}
+                policyText="Master password mới của bạn nên đạt mức Khá trở lên và tối thiểu 8 ký tự."
               />
 
               <div className="space-y-1.5">
                 <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Xác nhận mật khẩu mới</span>
-                <input 
-                  className="field" 
-                  type="password" 
-                  placeholder="Xác nhận lại mật khẩu mới" 
+                <input
+                  className="field"
+                  type="password"
+                  placeholder="Xác nhận lại mật khẩu mới"
                   required
-                  value={masterForm.confirm} 
-                  onChange={(event) => setMasterForm((prev) => ({ ...prev, confirm: event.target.value }))} 
+                  value={masterForm.confirm}
+                  onChange={(event) => setMasterForm((prev) => ({ ...prev, confirm: event.target.value }))}
                 />
               </div>
             </div>
 
             <div className="pt-2">
-              <button 
-                className="btn-primary w-full shadow-glow disabled:opacity-50 disabled:cursor-not-allowed" 
-                type="submit" 
+              <button
+                className="btn-primary w-full shadow-glow disabled:opacity-50 disabled:cursor-not-allowed"
+                type="submit"
                 disabled={!masterStrength.meetsPolicy}
               >
-                Cập nhật Master Password
+                Đổi Master Password
               </button>
             </div>
           </form>
@@ -319,10 +311,6 @@ export default function SecurityPage() {
                 </div>
               )}
             </div>
-            
-            <p className="text-[10px] text-app-muted/80 leading-normal">
-              Địa chỉ ví định danh này được sử dụng để xác thực chữ ký và liên kết cơ sở dữ liệu két sắt trên Blockchain & IPFS.
-            </p>
           </div>
 
           {/* Secure Profile Section (Saved E2E encrypted in DApp vault) */}
@@ -331,52 +319,49 @@ export default function SecurityPage() {
               <div className="space-y-1.5">
                 <h3 className="text-sm font-bold text-app-text flex items-center gap-2">
                   <Shield className="h-4 w-4 text-app-primary" />
-                  Hồ sơ bảo mật tối ưu hóa
+                  Hồ sơ cá nhân
                 </h3>
-                <p className="text-xs text-app-muted leading-normal">
-                  Được mã hóa đầu-cuối bằng Master Password của bạn và lưu trữ phi tập trung an toàn trên Web3/IPFS.
-                </p>
               </div>
 
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Họ và tên đầy đủ</span>
-                  <input 
-                    className="field" 
-                    value={secProfile.fullName} 
-                    onChange={(e) => setSecProfile((prev) => ({ ...prev, fullName: e.target.value }))} 
-                    placeholder="Nhập họ và tên đầy đủ" 
+                  <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Họ và tên</span>
+                  <input
+                    className="field"
+                    value={secProfile.fullName}
+                    onChange={(e) => setSecProfile((prev) => ({ ...prev, fullName: e.target.value }))}
+                    placeholder="Nhập họ và tên"
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Ngày tháng năm sinh</span>
-                  <input 
-                    className="field text-app-text" 
+                  <input
+                    className="field text-app-text"
                     type="date"
-                    value={secProfile.dob} 
-                    onChange={(e) => setSecProfile((prev) => ({ ...prev, dob: e.target.value }))} 
+                    value={secProfile.dob}
+                    onChange={(e) => setSecProfile((prev) => ({ ...prev, dob: e.target.value }))}
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <span className="text-xs font-bold text-app-muted uppercase tracking-wider block">Số điện thoại</span>
-                  <input 
-                    className="field" 
-                    value={secProfile.phone} 
-                    onChange={(e) => setSecProfile((prev) => ({ ...prev, phone: e.target.value }))} 
-                    placeholder="Nhập số điện thoại cá nhân" 
+                  <input
+                    className="field"
+                    value={secProfile.phone}
+                    onChange={(e) => setSecProfile((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="Nhập số điện thoại cá nhân"
                   />
                 </div>
               </div>
             </div>
 
             <div className="pt-4">
-              <button 
-                className="btn-primary w-full shadow-glow" 
+              <button
+                className="btn-primary w-full shadow-glow"
                 type="submit"
               >
-                Đồng bộ lên Web3 & IPFS
+                Cập nhật hồ sơ
               </button>
             </div>
           </form>

@@ -26,7 +26,7 @@ export default function PasswordStrengthHint({ password = "", userInputs = [], p
   if (!password) {
     return (
       <div className="rounded-2xl border border-dashed border-app-border bg-app-surface-alt/70 p-4 text-sm text-app-muted">
-        Nhập mật khẩu để xem đánh giá độ mạnh và thời gian bẻ khóa ước tính.
+        Đánh giá độ mạnh và thời gian bẻ khóa ước tính.
       </div>
     );
   }

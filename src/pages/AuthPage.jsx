@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Link2, Shield, Wallet } from "lucide-react";
+import { ArrowRight, Shield, Wallet } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { evaluatePasswordStrength, extractUserInputs, containsPersonalInfo } from "../utils/password";
 import { getIdentityAddress, vaultService } from "../services/vaultService";
@@ -12,7 +12,6 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const {
     session,
-    signInGoogle,
     connectWallet,
     bootstrapped,
     authBusy,
@@ -45,12 +44,11 @@ export default function AuthPage() {
 
   const registerStrength = useMemo(
     () =>
-      evaluatePasswordStrength(registerMaster, [
-        identity?.email || "",
-        identity?.displayName || "",
-        userAddress || "",
-        ...personalInputs
-      ]),
+      evaluatePasswordStrength(
+        registerMaster,
+        [identity?.email || "", identity?.displayName || "", userAddress || ""],
+        personalInputs
+      ),
     [identity?.displayName, identity?.email, userAddress, registerMaster, personalInputs]
   );
 
@@ -319,18 +317,13 @@ export default function AuthPage() {
               <div className="mb-6 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-lg shadow-emerald-950/20">
                 <Shield className="h-6 w-6" />
               </div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-200/80">Auth Gateway</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-200/80">Minimin Vault</p>
               <h1 className="mt-3 max-w-2xl text-3xl font-bold leading-tight lg:text-5xl">
-                Nhập Master Password trước, mở khóa bằng Danh tính
+                Quản lý mật khẩu an toàn và phi tập trung
               </h1>
               <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300">
-                Nhập Master Password để mã hóa/giải mã, sau đó chọn tài khoản Google hoặc ví MetaMask để xác minh danh tính Web3 của bạn.
+                Nhập Master Password sau đó chọn tài khoản Google hoặc ví MetaMask để xác minh danh tính Web3 của bạn.
               </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-slate-200 backdrop-blur">
-              <Link2 className="mr-2 inline-block h-4 w-4 text-emerald-200" />
-              Hệ thống: <span className="font-semibold text-white">Chế độ Web3 Production</span>
             </div>
           </div>
         </section>
@@ -355,13 +348,6 @@ export default function AuthPage() {
             >
               Đăng ký
             </button>
-          </div>
-
-          <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
-            <p className="font-semibold">Lưu ý về Master Password</p>
-            <p className="mt-1 leading-6">
-              Mật khẩu này là chìa khóa duy nhất để bảo vệ dữ liệu. Nó được xử lý cục bộ trên thiết bị của bạn và không bao giờ được gửi đi.
-            </p>
           </div>
 
           {userAddress && (
@@ -414,7 +400,6 @@ export default function AuthPage() {
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-semibold text-app-text">Đăng nhập bằng Google</span>
-                      <span className="block truncate text-xs text-app-muted">Mở ví non-custodial và giải mã</span>
                     </span>
                   </span>
                   <ArrowRight className="h-4 w-4 text-app-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-app-primary" />
@@ -432,7 +417,6 @@ export default function AuthPage() {
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-semibold text-app-text">Đăng nhập bằng MetaMask</span>
-                      <span className="block truncate text-xs text-app-muted">Kết nối ví Web3 và giải mã</span>
                     </span>
                   </span>
                   <ArrowRight className="h-4 w-4 text-app-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-orange-500" />
@@ -470,9 +454,9 @@ export default function AuthPage() {
                 password={registerMaster}
                 userInputs={[
                   identity?.email || "",
-                  identity?.displayName || "",
-                  ...personalInputs
+                  identity?.displayName || ""
                 ]}
+                personalInputs={personalInputs}
                 policyText="Mật khẩu master phải đạt mức Khá trở lên và tối thiểu 8 ký tự."
               />
 
@@ -491,7 +475,7 @@ export default function AuthPage() {
                 >
                   <span>Thông tin tối ưu hóa bảo mật mật khẩu (Tùy chọn)</span>
                   <span className="text-xs text-app-muted">
-                    {showSecurityProfile ? "Thu gọn ▲" : "Mở rộng ▼"}
+                    {showSecurityProfile ? "Thu gọn" : "Mở rộng"}
                   </span>
                 </button>
 

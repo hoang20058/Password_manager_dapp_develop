@@ -154,7 +154,7 @@ export function extractUserInputs(profile) {
 
 export function containsPersonalInfo(password, userInputs) {
   if (!password || !userInputs || userInputs.length === 0) return false;
-  const lowerPassword = password.toLowerCase();
+  const lowerPassword = String(password).toLowerCase();
   return userInputs.some((input) => {
     if (typeof input !== "string") return false;
     const lowerInput = input.trim().toLowerCase();
@@ -162,7 +162,7 @@ export function containsPersonalInfo(password, userInputs) {
   });
 }
 
-export function evaluatePasswordStrength(password = "", userInputs = []) {
+export function evaluatePasswordStrength(password = "", userInputs = [], personalInputs = []) {
   const normalizedPassword = String(password ?? "");
   const loweredPassword = normalizedPassword.toLowerCase();
   const cleanedInputs = userInputs
@@ -185,7 +185,7 @@ export function evaluatePasswordStrength(password = "", userInputs = []) {
   ensureStrengthEngine();
   const result = zxcvbn(normalizedPassword, cleanedInputs);
   const isCommon = COMMON_PASSWORDS.has(loweredPassword);
-  const hasPersonalInfo = containsPersonalInfo(normalizedPassword, cleanedInputs);
+  const hasPersonalInfo = containsPersonalInfo(normalizedPassword, personalInputs);
   const tooShort = normalizedPassword.length < MIN_PASSWORD_LENGTH;
   const score = isCommon || hasPersonalInfo ? 0 : result.score;
   
@@ -221,10 +221,9 @@ export function evaluatePasswordStrength(password = "", userInputs = []) {
   };
 }
 
-export { translateCrackTimeDisplay };
 
-export const isSafePassword = (password = "", userInputs = []) =>
-  evaluatePasswordStrength(password, userInputs).meetsPolicy;
+export const isSafePassword = (password = "", userInputs = [], personalInputs = []) =>
+  evaluatePasswordStrength(password, userInputs, personalInputs).meetsPolicy;
 
 export function assessVaultPasswords(vaults = []) {
   const entries = Array.isArray(vaults) ? vaults : [];

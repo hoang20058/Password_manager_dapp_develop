@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { STORAGE_KEYS } from "../utils/storageKeys";
 import { CryptoOperationError } from "../utils/crypto";
-import { signInWithGoogle, signOutGoogle } from "../services/authService";
+import { signInWithGoogle, signOutGoogle, restoreGooglePrivateKey } from "../services/authService";
 import { connectMetaMask } from "../services/walletService";
 import { vaultService, getIdentityAddress } from "../services/vaultService";
 import { getUserFriendlyMessage, ErrorCodes } from "../utils/errorHandling";
@@ -68,8 +68,8 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     const bootstrapSecrets = async () => {
-      // Reset session on page refresh/startup because RAM keys are lost anyway
-      setSession(defaultSession);
+      // Keep Google/MetaMask session across page refresh, but lock it (isSessionUnlocked = false)
+      // since the RAM encryption key is lost.
       setSessionUnlocked(false);
       setVaultsState([]);
       sessionKeyRef.current = null;
@@ -79,7 +79,13 @@ export function AppProvider({ children }) {
     };
 
     bootstrapSecrets();
-  }, [setSession, setSessionUnlocked]);
+  }, [setSessionUnlocked]);
+
+  useEffect(() => {
+    if (session?.isAuthenticated && session?.provider === "google" && session?.google?.uid) {
+      restoreGooglePrivateKey(session.google.uid, session.google.email);
+    }
+  }, [session]);
 
   useEffect(() => {
     const clearSessionKey = () => {
@@ -155,8 +161,6 @@ export function AppProvider({ children }) {
         email: googleUser.email || prev.email
       }));
       return nextSession;
-    } catch (error) {
-      throw error;
     } finally {
       setAuthBusy(false);
     }
@@ -377,10 +381,15 @@ export function AppProvider({ children }) {
   const importVaultData = useCallback(async (rawText, importPassword = "") => {
     const normalizedPassword = String(importPassword ?? "").trim();
     const parsedVaults = await vaultService.importFromJson(rawText, normalizedPassword);
+
     if (!sessionKeyRef.current) {
       throw new Error("Phiên đang khóa. Vui lòng mở khóa trước khi import");
     }
-    await setVaults(parsedVaults);
+    setVaults(prevVaults => {
+      const updatedVaults = [...prevVaults, ...parsedVaults];
+      return updatedVaults;
+    });
+
     return parsedVaults;
   }, [setVaults]);
 

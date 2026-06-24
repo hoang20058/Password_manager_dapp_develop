@@ -11,7 +11,6 @@ export default function VaultPage() {
       <PageHeader
         eyebrow="Kho bảo mật"
         title="Danh sách mật khẩu"
-        description="Quản lý vault, yêu cầu master password trước khi xem, chỉnh sửa, xuất hoặc xóa dữ liệu nhạy cảm."
         actions={[
           <span key="secure" className="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs text-app-text">
             <ShieldCheck className="h-4 w-4 text-green-500" />

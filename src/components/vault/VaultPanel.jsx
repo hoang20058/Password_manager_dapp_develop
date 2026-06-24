@@ -20,7 +20,6 @@ import PasswordStrengthHint from "../security/PasswordStrengthHint";
 import { getUserFriendlyMessage, normalizeError, ErrorCodes } from "../../utils/errorHandling";
 import { evaluatePasswordStrength, getDomainName, isSafePassword, extractUserInputs } from "../../utils/password";
 import { useApp } from "../../context/AppContext";
-import { vaultService } from "../../services/vaultService";
 
 const emptyForm = { url: "", username: "", password: "" };
 
@@ -91,8 +90,8 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
 
   const stats = {
     total: vaultList.length,
-    safe: vaultList.filter((item) => isSafePassword(item.password, [item.url, item.username, ...personalInputs])).length,
-    risk: vaultList.filter((item) => !isSafePassword(item.password, [item.url, item.username, ...personalInputs])).length
+    safe: vaultList.filter((item) => isSafePassword(item.password, [item.url, item.username], personalInputs)).length,
+    risk: vaultList.filter((item) => !isSafePassword(item.password, [item.url, item.username], personalInputs)).length
   };
 
   const filtered = useMemo(() => {
@@ -104,8 +103,8 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           mode === "all"
             ? true
             : mode === "safe"
-              ? isSafePassword(item.password, [item.url, item.username, ...personalInputs])
-              : !isSafePassword(item.password, [item.url, item.username, ...personalInputs]);
+              ? isSafePassword(item.password, [item.url, item.username], personalInputs)
+              : !isSafePassword(item.password, [item.url, item.username], personalInputs);
 
         const matchSearch =
           !searchTerm ||
@@ -258,10 +257,10 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
               disabled={isSaving}
             >
               <div className="space-y-1">
-                <p className="text-xs font-bold uppercase tracking-wider text-app-muted flex items-center gap-1.5">
+                <div className="text-xs font-bold uppercase tracking-wider text-app-muted flex items-center gap-1.5">
                   <span>{label}</span>
                   <InfoTooltip content={tooltipContent[id]} />
-                </p>
+                </div>
                 <p className={`text-3xl font-black tracking-tight ${
                   id === "all" ? "text-app-text" : id === "safe" ? "text-app-success" : "text-app-danger"
                 }`}>{value}</p>
@@ -311,7 +310,7 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
         {!isLoading && filtered.length > 0 ? (
           <div className="grid gap-4">
             {filtered.map((item) => {
-              const strength = evaluatePasswordStrength(item.password, [item.url, item.username, ...personalInputs]);
+              const strength = evaluatePasswordStrength(item.password, [item.url, item.username], personalInputs);
               const safe = strength.meetsPolicy;
               const domain = getDomainName(item.url) || "unknown-site";
 
@@ -470,7 +469,8 @@ export default function VaultPanel({ vaults, setVaults, search = "", onToast }) 
           
           <PasswordStrengthHint
             password={form.password}
-            userInputs={[form.url, form.username, ...personalInputs]}
+            userInputs={[form.url, form.username]}
+            personalInputs={personalInputs}
             policyText="Mật khẩu lưu trong két sắt nên đạt mức Khá trở lên và tối thiểu 8 ký tự."
           />
           

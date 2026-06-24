@@ -11,14 +11,10 @@ export async function connectMetaMask() {
   }
 
   const provider = new BrowserProvider(window.ethereum);
-  try {
-    await window.ethereum.request({
-      method: "wallet_requestPermissions",
-      params: [{ eth_accounts: {} }]
-    });
-  } catch (err) {
-    throw err;
-  }
+  await window.ethereum.request({
+    method: "wallet_requestPermissions",
+    params: [{ eth_accounts: {} }]
+  });
   await provider.send("eth_requestAccounts", []);
   const signer = await provider.getSigner();
   const address = await signer.getAddress();
