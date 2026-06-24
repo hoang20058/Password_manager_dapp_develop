@@ -176,7 +176,8 @@ async function persistLocalVault(db, encryptedPayload) {
   await putVaultRecord(db, encryptedPayload);
 }
 
-function canFallbackToLocal(error) {
+function canFallbackToLocal(error, disallowFallback = false) {
+  if (disallowFallback) return false;
   const normalized = normalizeError(error, ErrorCodes.SYNC_FAILED);
   return isRetryableError(normalized);
 }
@@ -474,8 +475,11 @@ export const vaultService = {
       };
     } catch (error) {
       const normalized = normalizeError(error, ErrorCodes.SYNC_FAILED);
+      const disallowFallback = typeof optionsOrSkipIpfs === "object" && optionsOrSkipIpfs !== null
+        ? Boolean(optionsOrSkipIpfs.disallowFallback)
+        : false;
 
-      if (!canFallbackToLocal(normalized)) {
+      if (!canFallbackToLocal(normalized, disallowFallback)) {
         emitProgress(options.onProgress, "failed", getUserFriendlyMessage(normalized), { error: normalized });
         throw normalized;
       }

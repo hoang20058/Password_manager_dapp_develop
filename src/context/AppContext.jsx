@@ -355,18 +355,24 @@ export function AppProvider({ children }) {
       }
 
       const action = masterGate.action;
+      if (action) {
+        setMasterGate((prev) => ({ ...prev, isExecuting: true, error: "" }));
+        await action(password);
+      }
       closeMasterGate();
-      if (action) await action(password);
       return { ok: true };
     } catch (error) {
-      const message = getUserFriendlyMessage(error) || "Không thể mở khóa phiên. Vui lòng thử lại.";
-      setMasterGate((prev) => ({ ...prev, error: message }));
+      const message = getUserFriendlyMessage(error) || "Không thể thực hiện hành động. Vui lòng thử lại.";
+      setMasterGate((prev) => ({ ...prev, error: message, isExecuting: false }));
       return { ok: false, message };
     }
   }, [closeMasterGate, masterGate.action, runSessionUnlock]);
 
   const clearAllVaultData = useCallback(async () => {
-    await setVaults([]);
+    const result = await setVaults([], { disallowFallback: true });
+    if (result?.sync?.status === "local_fallback" || result?.sync?.status === "skipped") {
+      throw new Error("Không thể đồng bộ trạng thái xóa lên Blockchain. Vui lòng kiểm tra lại kết nối Web3.");
+    }
     notify("Đã xóa toàn bộ dữ liệu vault", "warning");
   }, [notify, setVaults]);
 
@@ -385,10 +391,10 @@ export function AppProvider({ children }) {
     if (!sessionKeyRef.current) {
       throw new Error("Phiên đang khóa. Vui lòng mở khóa trước khi import");
     }
-    setVaults(prevVaults => {
+    await setVaults(prevVaults => {
       const updatedVaults = [...prevVaults, ...parsedVaults];
       return updatedVaults;
-    });
+    }, { disallowFallback: true });
 
     return parsedVaults;
   }, [setVaults]);

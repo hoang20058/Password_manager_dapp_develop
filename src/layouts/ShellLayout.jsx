@@ -70,6 +70,7 @@ export default function ShellLayout() {
         open={masterGate.open}
         purpose={masterGate.purpose}
         error={masterGate.error}
+        isExecuting={masterGate.isExecuting}
         onClose={closeMasterGate}
         onSubmit={confirmMasterGate}
         onLogout={logout}
